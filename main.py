@@ -1,4 +1,7 @@
-from feedin import app
+from feedin import app, databaseexit
+
+with app.app_context():
+    database.create_all()
 
 if __name__ == "__main__":
     app.run(debug=True)
