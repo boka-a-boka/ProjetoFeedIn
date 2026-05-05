@@ -50,12 +50,16 @@ app.template_filter('tempo_atras')(tempo_atras_filter)
 database_uri = os.environ.get('DATABASE_URL')
 
 if database_uri:
-    # Pequeno ajuste técnico: O SQLAlchemy exige "postgresql://" mas o Render às vezes entrega "postgres://"
     if database_uri.startswith("postgres://"):
         database_uri = database_uri.replace("postgres://", "postgresql://", 1)
+
+    # Adicione os argumentos de SSL para o motor do SQLAlchemy
     app.config["SQLALCHEMY_DATABASE_URI"] = database_uri
-else:
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///feedin-db.db"
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "connect_args": {
+            "sslmode": "require"
+        }
+    }
 
 # Agora buscamos as chaves reais do seu .env
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', '$2a$20$DefaultFallbackKeySeOEnvFalhar')
