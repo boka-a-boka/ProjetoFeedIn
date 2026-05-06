@@ -7,13 +7,13 @@ from flask_mail import Mail
 from datetime import timedelta, timezone, datetime
 from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
-from cryptography.fernet import Fernet # IMPORTANTE
-from dotenv import load_dotenv # IMPORTANTE
+from cryptography.fernet import Fernet
+from dotenv import load_dotenv
 import os
 import logging
 from logging.handlers import RotatingFileHandler
 
-# 1. Carrega as variáveis do arquivo .env (SECRET_KEY e CHAVE_CPF)
+# 1. Carrega as variáveis do arquivo .env
 load_dotenv()
 
 # 2. Criamos o app
@@ -29,40 +29,44 @@ file_handler.setFormatter(logging.Formatter(
 ))
 file_handler.setLevel(logging.INFO)
 app.logger.addHandler(file_handler)
-
 app.logger.setLevel(logging.INFO)
-app.logger.info("FeedIn Startup - Iniciando Beta Oficial")
 
 # --- CONFIGURAÇÕES DE CRIPTOGRAFIA DO CPF ---
-# Buscamos a chave do .env. Se não existir, o sistema avisa.
 CHAVE_CPF = os.environ.get('CHAVE_CRIPTOGRAFIA_CPF')
 if CHAVE_CPF:
     app.fernet = Fernet(CHAVE_CPF)
 else:
-    # Aviso de segurança caso você esqueça de configurar o .env
     print("AVISO: CHAVE_CRIPTOGRAFIA_CPF não encontrada no arquivo .env")
 
-# 3. Importamos o que depende do utils (evita importação circular)
+# 3. Importamos o que depende do utils
 from .utils import tempo_atras_filter
 app.template_filter('tempo_atras')(tempo_atras_filter)
 
 # --- CONFIGURAÇÕES DE BANCO E SEGURANÇA ---
+
+# Define o caminho para o arquivo que você já subiu
+# 'instance/feedin-db.db'
+basedir = os.path.abspath(os.path.dirname(__file__))
+db_path = os.path.join(basedir, 'instance', 'feedin-db.db')
+
+# Se houver DATABASE_URL no .env (para Postgres), usa ela. 
+# Caso contrário, usa o SQLite local.
 database_uri = os.environ.get('DATABASE_URL')
 
 if database_uri:
     if database_uri.startswith("postgres://"):
         database_uri = database_uri.replace("postgres://", "postgresql://", 1)
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_uri
+    # Se for Postgres, pode precisar de SSL, mas para SQLite JAMAIS.
+    if "postgresql" in database_uri:
+        app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"connect_args": {"sslmode": "require"}}
+else:
+    # PADRÃO PARA O SEU SERVIDOR ATUAL (SQLite)
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 
-    # Adicione os argumentos de SSL para o motor do SQLAlchemy
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///instance/feedin-db.db')
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-        "connect_args": {
-            "sslmode": "require"
-        }
-    }
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Agora buscamos as chaves reais do seu .env
+# Chaves de segurança
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', '$2a$20$DefaultFallbackKeySeOEnvFalhar')
 app.config['SECURITY_PASSWORD_SALT'] = os.environ.get('SECURITY_PASSWORD_SALT', '$2a$12$SaltFallback')
 
@@ -96,5 +100,4 @@ login_manager.login_view = "login"
 login_manager.login_message = "Sua sessão expirou, por favor faça login novamente."
 login_manager.login_message_category = "info"
 
-# Importação ao final para evitar importação circular
 from feedin import routes, models

@@ -79,8 +79,9 @@
             <button class="btn btn-white btn-sm rounded-pill px-3 shadow-sm position-relative border"
                     type="button" id="notifDropdown" data-bs-toggle="dropdown" aria-expanded="false">
                 <i class="bi bi-bell-fill text-primary"></i>
-                <span id="badge-notificacao" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none" style="font-size: 0.65rem;">
-                    0
+                {# O Badge só aparece se houver notificações > 0 #}
+                <span id="badge-notificacao" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger {{ 'd-none' if not notificacoes|length > 0 }}" style="font-size: 0.65rem;">
+                    {{ notificacoes|length }}
                 </span>
             </button>
 
@@ -107,11 +108,6 @@
                         <p class="text-muted text-center small my-3">Nenhuma novidade.</p>
                     {% endfor %}
                 </div>
-
-                <span id="badge-notificacao" class="position-absolute ... {{ 'd-none' if not notificacoes|length > 0 }}">
-                    {{ notificacoes|length }}
-                </span>
-
             </ul>
         </div>
 

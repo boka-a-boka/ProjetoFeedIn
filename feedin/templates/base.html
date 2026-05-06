@@ -27,9 +27,8 @@
 </head>
 <body class="d-flex flex-column h-100">
 
-    {# A NAVBAR SÓ APARECE SE NÃO ESTIVERMOS NA HOMEPAGE (já que a home tem a sua própria navbar mobile-first) #}
+    {# NAVBAR PARA VISITANTES OU PÁGINAS FORA DA DASHBOARD #}
     {% if request.endpoint != 'homepage' %}
-        {% if not current_user.is_authenticated %}
         <nav class="navbar navbar-light bg-white border-bottom sticky-top shadow-sm w-100">
             <div class="container d-flex align-items-center justify-content-between py-2">
                 <a class="navbar-brand d-flex align-items-center" href="/">
@@ -38,16 +37,20 @@
                 </a>
 
                 <div class="d-flex gap-2">
-                    {% if request.endpoint != 'login' %}
-                        <a href="{{ url_for('login') }}" class="btn btn-sm btn-success px-3 rounded-pill">Entrar</a>
-                    {% endif %}
-                    {% if request.endpoint != 'newuser' %}
-                        <a href="{{ url_for('newuser') }}" class="btn btn-sm btn-primary px-3 rounded-pill">Criar conta</a>
+                    {% if not current_user.is_authenticated %}
+                        {% if request.endpoint != 'login' %}
+                            <a href="{{ url_for('login') }}" class="btn btn-sm btn-success px-3 rounded-pill">Entrar</a>
+                        {% endif %}
+                        {% if request.endpoint != 'newuser' %}
+                            <a href="{{ url_for('newuser') }}" class="btn btn-sm btn-primary px-3 rounded-pill">Criar conta</a>
+                        {% endif %}
+                    {% else %}
+                        {# Se estiver logado mas caiu numa página externa, mostra botão para voltar ao Dashboard #}
+                        <a href="{{ url_for('dashboard', aba='feed') }}" class="btn btn-sm btn-outline-primary px-3 rounded-pill">Ir para o Feed</a>
                     {% endif %}
                 </div>
             </div>
         </nav>
-        {% endif %}
     {% endif %}
 
     {# MENSAGENS FLASH (Alertas) #}
