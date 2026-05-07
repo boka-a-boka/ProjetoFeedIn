@@ -27,8 +27,8 @@
 
     {# Lista de Apelidos com Opção de Edição Rápida #}
     <div id="lista-apelidos" class="d-flex flex-wrap gap-2">
-        {% if perfil and perfil.apelidos %}
-            {% for apelido in perfil.apelidos %}
+        {% if current_user.perfil and current_user.perfil.apelidos %}
+            {% for apelido in current_user.perfil.apelidos %}
                 <div class="btn-group shadow-sm animate__animated animate__fadeIn">
                     <span class="badge rounded-start-pill bg-white text-dark border border-end-0 d-flex align-items-center px-3 py-2">
                         {{ apelido.apelido }}

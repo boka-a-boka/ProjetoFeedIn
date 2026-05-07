@@ -387,6 +387,7 @@ def editar_perfil():
     # Se o formulário NÃO validar (algum campo obrigatório vazio ou formato errado)
     print(f"ERROS WTFORMS: {form.errors}")
     flash("Por favor, verifique os campos destacados e tente novamente.", "warning")
+    return redirect(request.referrer or url_for('get_perfil', id_usuario=current_user.id))
     return redirect(url_for('configuracoes', aba='perfil'))
 
 
@@ -1045,34 +1046,24 @@ def get_perfil(id_usuario):
 @login_required
 def adicionar_apelido():
     form_apelido = FormApelido()
-
     if form_apelido.validate_on_submit():
         perfil = Perfil.query.filter_by(id_usuario=current_user.id).first()
-
-        # 1. Trava de segurança: garante que o perfil existe antes de criar o apelido
         if not perfil:
-            flash("Por favor, preencha seus dados básicos primeiro.", "warning")
-            return redirect(url_for('get_perfil', id_usuario=current_user.id, aba='perfil'))
+            flash("Complete seus dados básicos primeiro.", "warning")
+            return redirect(url_for('get_perfil', id_usuario=current_user.id))
 
-        # 2. Criação do vínculo
         novo = Apelidos(apelido=form_apelido.apelido.data, id_perfil=perfil.id)
         database.session.add(novo)
         database.session.commit()
-        flash("Apelido adicionado!", "success")
-    else:
-        # 3. Feedback visual em caso de erro (ex: apelido longo demais)
-        for field, errors in form_apelido.errors.items():
-            for error in errors:
-                flash(f"Erro: {error}", "danger")
+        flash("Apelido registrado!", "success")
 
-    # 4. O REDIRECIONAMENTO INTELIGENTE:
-    if current_user.nivel_acesso < 10:
-        # Usuário em fase de boas-vindas: mantém no fluxo narrativo do Onboarding
-        return redirect(url_for('get_perfil', id_usuario=current_user.id, aba='perfil'))
+    # A LÓGICA DE RETORNO BASEADA NA SUA TRAVA:
+    if current_user.nivel_acesso >= 10:
+        # Se ele já é veterano/validado, volta para o Dashboard na aba correta
+        return redirect(request.referrer or url_for('get_perfil', id_usuario=current_user.id))
     else:
-        # Usuário já ativo (Pioneiro/Gestor): retorna para o painel administrativo
-        # Aqui, a aba sempre será 'perfil' pois é nela que estão os apelidos em Configurações
-        return redirect(url_for('configuracoes', aba='perfil'))
+        # Se ele está no Onboarding (Fase 3), volta para a tela unificada
+        return redirect(url_for('get_perfil', id_usuario=current_user.id))
 
 
 @app.route('/editar_apelido/<int:id_apelido>', methods=['POST'])
@@ -1090,7 +1081,14 @@ def editar_apelido(id_apelido):
         database.session.commit()
         flash("Apelido atualizado!", "success")
 
-    return redirect(url_for('configuracoes', aba='perfil'))
+        # ... (lógica de banco de dados anterior) ...
+        database.session.commit()
+        flash("Atualizado com sucesso!", "success")
+
+        # O SEGREDO ESTÁ AQUI:
+        # Redireciona para a página de perfil completa, sem especificar abas que podem virar fragmentos.
+        return redirect(request.referrer or url_for('get_perfil', id_usuario=current_user.id))
+
 
 
 @app.route('/excluir_apelido/<int:id_apelido>', methods=['GET', 'POST'])
@@ -1106,8 +1104,16 @@ def excluir_apelido(id_apelido):
     database.session.commit()
     flash('Apelido removido!', 'info')
 
-    # REDIRECIONAMENTO CORRIGIDO
-    return redirect(url_for('get_perfil', id_usuario=current_user.id, aba='memorias'))
+    # Retorno inteligente igual ao da adição
+    if current_user.nivel_acesso >= 10:
+
+        # ... (lógica de banco de dados anterior) ...
+        database.session.commit()
+        flash("Atualizado com sucesso!", "success")
+
+        # O SEGREDO ESTÁ AQUI:
+        # Redireciona para a página de perfil completa, sem especificar abas que podem virar fragmentos.
+        return redirect(request.referrer or url_for('get_perfil', id_usuario=current_user.id))
 
 
 @app.route('/admin/mudar_nivel/<int:id_alvo>/<int:novo_nivel>')
@@ -2373,20 +2379,20 @@ def gerar_convite():
 
 @app.route('/servir-foto-perfil/<int:usuario_id>')
 def servir_foto_perfil(usuario_id):
-    usuario = Usuario.query.get_or_404(usuario_id)
-    nome_foto = usuario.foto_perfil  # O campo na tabela Usuario
+    usuario = Usuario.query.get(usuario_id)  # Usamos get para não dar 404 se o usuário sumir
 
-    # Construção do caminho absoluto (Segurança total)
-    # Lembra que você definiu PASTA_FOTOS = "fotos_perfil"
+    # Pasta onde ficam as fotos (static/fotos_perfil)
     pasta_fotos = os.path.join(current_app.static_folder, 'fotos_perfil')
 
-    caminho_completo = os.path.join(pasta_fotos, nome_foto if nome_foto else "")
+    # Se o usuário existe e tem foto gravada
+    if usuario and usuario.foto_perfil:
+        caminho_completo = os.path.join(pasta_fotos, usuario.foto_perfil)
+        if os.path.exists(caminho_completo):
+            return send_from_directory(pasta_fotos, usuario.foto_perfil)
 
-    if nome_foto and os.path.exists(caminho_completo):
-        return send_from_directory(pasta_fotos, nome_foto)
-
-    # Se não existir, serve a padrão
-    return send_from_directory(os.path.join(current_app.static_folder, 'imagens'), 'default.jpg')
+    # Se cair aqui (usuário não existe, sem foto ou arquivo sumiu), serve a padrão.
+    # IMPORTANTE: Garanta que a default.jpg esteja dentro de static/fotos_perfil
+    return send_from_directory(pasta_fotos, 'default.jpg')
 
 
 def enviar_email_nutricao(nome, email, interesse):
@@ -2514,11 +2520,13 @@ def configuracoes(aba='perfil'):
         interesses_obj = []
 
     minhas_prefs_json = json.dumps([{'id': p.id, 'nome': p.nome} for p in interesses_obj])
+    perfil = Perfil.query.filter_by(id_usuario=current_user.id).first()
 
     return render_template("configuracoes.html",
                            aba_ativa=aba_final,
                            generos=generos,
                            estados=estados_civis,
+                           perfil=perfil,
                            form_apelido=form_apelido,
                            minhas_prefs_json=minhas_prefs_json,
                            identidade=current_user.identidade)

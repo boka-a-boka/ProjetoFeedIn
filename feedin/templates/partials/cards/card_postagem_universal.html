@@ -105,25 +105,20 @@
                          style="max-height: 500px;"
                          alt="Memória Viva">
 
-{# Overlay de Pessoas Marcadas - Versão Final de Piracicaba #}
-{% if post_obj and post_obj.pessoas_marcadas %}
-    <div class="position-absolute bottom-0 start-0 w-100 p-3" style="background: linear-gradient(transparent, rgba(0,0,0,0.85));">
-        <div class="d-flex flex-wrap gap-2">
-            <span class="small text-white me-2"><i class="bi bi-person-plus-fill me-1"></i> Com:</span>
-
-            {# Ordenação forçada no Jinja #}
-            {% set lista_ordenada = post_obj.pessoas_marcadas|sort(attribute='username', case_sensitive=False) %}
-
-            {% for pessoa in lista_ordenada %}
-                <a href="{{ url_for('ver_perfil', usuario_id=pessoa.id) }}"
-                   class="badge rounded-pill bg-white text-dark text-decoration-none shadow-sm py-1 px-2"
-                   style="font-weight: 800 !important; font-size: 0.75rem;">
-                   @{{ pessoa.username.lower() }}
-                </a>
-            {% endfor %}
-        </div>
-    </div>
-{% endif %}
+                    {# Overlay de Pessoas Marcadas - Dentro do Card Universal #}
+                    {% if atividade and atividade.pessoas_marcadas %}
+                        <div class="position-absolute bottom-0 start-0 w-100 p-2" style="background: linear-gradient(transparent, rgba(0,0,0,0.8)); z-index: 5;">
+                            <div class="d-flex flex-wrap gap-1">
+                                {% for pessoa in atividade.pessoas_marcadas %}
+                                    <a href="{{ url_for('ver_perfil', usuario_id=pessoa.id) }}"
+                                       class="badge rounded-pill bg-white text-dark text-decoration-none shadow-sm"
+                                       style="font-size: 0.6rem; padding: 2px 6px; opacity: 0.9; font-weight: 600;">
+                                       @{{ pessoa.username.lower() }}
+                                    </a>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    {% endif %}
                 </div>
             {% endif %}
 
@@ -134,31 +129,25 @@
             </div>
         {% endif %}
 
-        {# Rodapé Estratégico - COM TRAVA DE SEGURANÇA #}
+        {# Rodapé Unificado - Garante que as reações apareçam em qualquer perfil #}
         <div class="px-3 pb-3">
             <div class="pt-2 d-flex justify-content-between align-items-center">
                 <div>
-                    {# Oculta o local se já estivermos no Perfil Local ou se id_local for nulo #}
-                    {% if (eh_memoria_local or atividade.id_local) and context_origem != 'perfil_local' %}
+                    {# Mostra o local apenas se não estivermos na página do próprio local #}
+                    {% if atividade.id_local and context_origem != 'perfil_local' %}
+                        {% set nome_exibicao = nome_local if nome_local else "Ver Local" %}
                         <a href="{{ url_for('perfil_local', local_id=atividade.id_local) }}" class="text-decoration-none">
                             <span class="badge rounded-pill bg-light text-primary border-0 py-2 px-3 shadow-xs" style="font-size: 0.75rem;">
-                                <i class="bi bi-geo-alt-fill me-1"></i> {{ nome_local }}
+                                <i class="bi bi-geo-alt-fill me-1"></i> {{ nome_exibicao }}
                             </span>
                         </a>
                     {% endif %}
                 </div>
 
-                {# AQUI ESTAVA O ERRO: Adicionamos o 'if atividade.id_local' #}
-                {% if context_origem != 'perfil_local' and context_origem != 'perfil_publico' and atividade.id_local %}
-                    <div class="text-end" onclick="window.location.href='{{ url_for('perfil_local', local_id=atividade.id_local) }}'" style="cursor:pointer;">
-                        <span class="text-primary small fw-bold">
-                             Explorar Memória <i class="bi bi-arrow-right-circle-fill ms-1"></i>
-                        </span>
-                    </div>
-                {% else %}
-                    {# Se não tem local ou já estamos no perfil, mostra só as reações #}
+                {# REAÇÕES: Removida qualquer trava de IF que use context_origem #}
+                <div class="d-flex align-items-center gap-3">
                     {% include "partials/cards/_footer_reacoes.html" %}
-                {% endif %}
+                </div>
             </div>
         </div>
     </div>

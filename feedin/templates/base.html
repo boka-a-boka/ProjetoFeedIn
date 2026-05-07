@@ -33,25 +33,32 @@
 </head>
 <body class="d-flex flex-column h-100">
 
-    {# A NAVBAR SÓ APARECE SE NÃO ESTIVERMOS NA HOMEPAGE E SE NÃO ESTIVER AUTENTICADO (Para visitantes) #}
+{# A NAVBAR SÓ APARECE SE NÃO ESTIVERMOS NA HOMEPAGE E SE NÃO ESTIVER AUTENTICADO #}
     {% if request.endpoint != 'homepage' %}
         {% if not current_user.is_authenticated %}
-        <nav class="navbar navbar-expand-lg navbar-light bg-white border-bottom sticky-top shadow-sm px-3 d-flex align-items-center">
+        <nav class="navbar navbar-expand-lg navbar-light bg-white border-bottom sticky-top shadow-sm px-2" style="min-height: 80px;">
             <div class="container-fluid d-flex align-items-center justify-content-between">
-                <a class="navbar-brand d-flex align-items-center" href="/">
-                    <img src="{{ url_for('static', filename='fotos/logo-feedin.jpg') }}" alt="Logo" width="45" height="45" class="me-2">
-                    <span class="fw-bold text-primary" style="letter-spacing: -1px; font-size: 1.5rem;">FEEDIN!</span>
+
+                <!-- Logo: Mantendo o ajuste aprovado -->
+                <a class="navbar-brand d-flex align-items-center" href="/" style="margin-top: -8px;">
+                    <img src="{{ url_for('static', filename='fotos/logo-feedin.jpg') }}" alt="Logo" width="35" height="35" class="me-1 shadow-sm">
+                    <span class="fw-bold text-primary" style="letter-spacing: -1.5px; font-size: 1.15rem;">FEEDIN!</span>
                 </a>
 
-                <div class="d-flex align-items-center gap-2">
+                <!-- Botões: Entrar em Verde e Criar Conta no seu Azul original -->
+                <div class="d-flex align-items-center gap-1">
                     {% if request.endpoint not in ['login'] %}
-                        <a href="{{ url_for('login') }}" class="btn btn-entrar me-1 px-4 rounded-pill fw-bold shadow-sm">
+                        <a href="{{ url_for('login') }}"
+                           class="btn btn-sm rounded-pill px-3 fw-bold shadow-sm"
+                           style="background-color: #28a745; color: #ffffff; border: none; font-size: 0.85rem;">
                             Entrar
                         </a>
                     {% endif %}
 
                     {% if request.endpoint not in ['newuser', 'registro'] %}
-                        <a href="{{ url_for('newuser') }}" class="btn btn-primary px-4 rounded-pill fw-bold shadow-sm">
+                        <a href="{{ url_for('newuser') }}"
+                           class="btn btn-sm btn-primary rounded-pill px-3 fw-bold shadow-sm"
+                           style="font-size: 0.85rem;">
                             Criar conta
                         </a>
                     {% endif %}

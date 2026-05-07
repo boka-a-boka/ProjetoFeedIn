@@ -307,8 +307,165 @@
             </div>
         </div>
     </div>
+
+    <!-- Modal de Comentários -->
+    <div class="modal fade" id="modalComentario" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg" style="border-radius: 20px;">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title fw-bold text-primary">Eternizar Resposta</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="modalPostId">
+                    <div class="form-group">
+                        <label for="textoComentario" class="small text-muted mb-2">Sua mensagem:</label>
+                        <!-- Aqui definimos as 7 linhas que você pediu -->
+                        <textarea id="textoComentario" class="form-control border-0 bg-light"
+                                  rows="7" placeholder="Escreva aqui..."
+                                  style="border-radius: 15px; resize: none;"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer border-0">
+                    <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary rounded-pill px-4" onclick="enviarComentarioModal()">Enviar Resposta</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
 </div>
 
-{# Modais e Scripts omitidos para brevidade, mas devem ser mantidos conforme o seu original #}
+{# Garante que o jQuery exista #}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+<script>
+/**
+ * 1. REAÇÕES SOCIAIS (CURTI / NÃO CURTI)
+ */
+function registrarReacaoSocial(postId, tipoReacao) {
+    if (window.event) window.event.preventDefault();
+    const urlReacao = "/reagir_post/" + postId + "/" + tipoReacao;
+    const $icone = $('#icon-' + tipoReacao + '-' + postId);
+    const $contCurti = $('#cont-curti-' + postId);
+    const $contNaoCurti = $('#cont-nao_curti-' + postId);
+    const $iconeCurti = $('#icon-curti-' + postId);
+    const $iconeNaoCurti = $('#icon-nao_curti-' + postId);
+
+    if ($icone.data('loading')) return;
+    $icone.data('loading', true);
+
+    $.ajax({
+        url: urlReacao,
+        method: 'POST',
+        data: { csrf_token: "{{ csrf_token() }}" },
+        success: function(response) {
+            if (response.status === "success") {
+                if ($contCurti.length) $contCurti.text(response.novo_total_curti);
+                if ($contNaoCurti.length) $contNaoCurti.text(response.novo_total_nao_curti);
+
+                if (tipoReacao === 'curti') {
+                    $iconeCurti.toggleClass('bi-hand-thumbs-up bi-hand-thumbs-up-fill text-primary text-muted');
+                    $iconeNaoCurti.removeClass('bi-hand-thumbs-down-fill text-danger').addClass('bi-hand-thumbs-down text-muted');
+                } else if (tipoReacao === 'nao_curti') {
+                    $iconeNaoCurti.toggleClass('bi-hand-thumbs-down bi-hand-thumbs-down-fill text-danger text-muted');
+                    $iconeCurti.removeClass('bi-hand-thumbs-up-fill text-primary').addClass('bi-hand-thumbs-up text-muted');
+                }
+            }
+        },
+        complete: function() { $icone.data('loading', false); }
+    });
+}
+
+/**
+ * 2. COMENTÁRIOS (ABRIR E ENVIAR)
+ * Aqui simulamos a abertura de um prompt simples, mas o ideal é um modal
+ */
+/**
+ * Abre o Modal em vez do prompt limitado
+ */
+function abrirComentarios(postId) {
+    $('#modalPostId').val(postId); // Guarda o ID do post no campo oculto
+    $('#textoComentario').val(''); // Limpa o texto anterior
+    const meuModal = new bootstrap.Modal(document.getElementById('modalComentario'));
+    meuModal.show();
+}
+
+/**
+ * Envia o comentário do Modal para o Python
+ */
+function enviarComentarioModal() {
+    const postId = $('#modalPostId').val();
+    const texto = $('#textoComentario').val();
+
+    if (!texto || texto.trim().length === 0) {
+        alert("O comentário não pode estar vazio.");
+        return;
+    }
+
+    $.ajax({
+        url: "/comentar_post/" + postId,
+        method: 'POST',
+        data: {
+            texto: texto,
+            csrf_token: "{{ csrf_token() }}"
+        },
+        success: function(response) {
+            if (response.status === "success") {
+                // Fecha o modal e recarrega a página
+                bootstrap.Modal.getInstance(document.getElementById('modalComentario')).hide();
+                window.location.reload();
+            } else {
+                alert(response.message);
+            }
+        },
+        error: function() {
+            alert("Erro ao enviar comentário.");
+        }
+    });
+}
+
+/**
+ * 3. EXCLUSÃO DE COMENTÁRIO
+ */
+function deletarComentario(comentarioId) {
+    if (confirm("Deseja realmente remover este comentário?")) {
+        $.ajax({
+            url: "/excluir_comentario/" + comentarioId,
+            method: 'POST',
+            data: { csrf_token: "{{ csrf_token() }}" },
+            success: function(response) {
+                if (response.status === "success") {
+                    window.location.reload();
+                }
+            }
+        });
+    }
+}
+
+/**
+ * 4. UPLOAD DE CAPA
+ */
+window.uploadCapaAutomatica = function(input) {
+    if (input.files && input.files[0]) {
+        const formData = new FormData();
+        formData.append('foto_capa', input.files[0]);
+        formData.append('csrf_token', "{{ csrf_token() }}");
+        $('.capa-container').css('opacity', '0.5');
+        $.ajax({
+            url: "{{ url_for('upload_capa') }}",
+            method: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            success: function() { window.location.reload(); },
+            error: function() {
+                alert("Erro no upload.");
+                $('.capa-container').css('opacity', '1');
+            }
+        });
+    }
+};
+</script>
 
 {% endblock %}
