@@ -4,7 +4,6 @@
         transform: translateY(-3px);
         box-shadow: 0 0.5rem 1.5rem rgba(0,0,0,0.1) !important;
     }
-
 </style>
 
 <div class="animate__animated animate__fadeIn">
@@ -12,19 +11,19 @@
         <h3 class="fw-bold mb-0"><i class="bi bi-geo-alt-fill text-primary me-2"></i>Memórias da Cidade</h3>
     </div>
 
+    <!-- BUSCA (Apenas uma vez aqui) -->
     <div class="card border-0 shadow-sm rounded-4 mb-4">
         <div class="card-body p-3">
-            <form action="{{ url_for('dashboard') }}" method="GET" class="d-flex gap-2">
+            <form action="{{ url_for('dashboard') }}" method="GET" class="d-flex gap-2" id="form-busca-local">
                 <input type="hidden" name="aba" value="locais">
                 <div class="input-group">
                     <span class="input-group-text bg-light border-0"><i class="bi bi-search text-muted"></i></span>
                     <input type="text" name="busca_local" id="busca_local"
-                           class="form-control border-0 bg-light"
-                           placeholder="Procurar um local histórico..."
-                           value="{{ request.args.get('busca_local', '') }}"
-                           list="lista-locais-autocomplete" autocomplete="off">
-
-                    <!-- Esta lista será preenchida dinamicamente pelo JavaScript -->
+                       class="form-control border-0 bg-light"
+                       placeholder="Procurar um local histórico..."
+                       value=""
+                       list="lista-locais-autocomplete"
+                       autocomplete="off">
                     <datalist id="lista-locais-autocomplete"></datalist>
                 </div>
                 <button type="submit" class="btn btn-primary rounded-pill px-4 fw-bold">Buscar</button>
@@ -32,9 +31,10 @@
         </div>
     </div>
 
+    <!-- LISTA DE LOCAIS -->
     <div class="row g-3">
-        {% if locais %}
-            {% for local, total in locais %}
+        {% if locais_populares %}
+            {% for local, total in locais_populares %}
             <div class="col-md-6">
                 <div class="card border-0 shadow-sm rounded-4 h-100 transition-hover">
                     <div class="card-body p-4">
@@ -46,14 +46,12 @@
                         <h5 class="fw-bold text-dark mb-1">{{ local.nome }}</h5>
                         <p class="text-muted small mb-3">
                             <i class="bi bi-geo-alt-fill text-danger me-1"></i>
-                            {# CORRIGIDO: Usando 'local' em vez de 'item[0]' #}
                             {{ local.logradouro }}{% if local.numero %}, {{ local.numero }}{% endif %}
                             <br>
                             <small class="text-uppercase fw-semibold" style="font-size: 0.75rem; margin-left: 1.2rem;">
                                 <i class="bi bi-geo"></i> {{ local.bairro if local.bairro else 'Piracicaba' }}
                             </small>
                         </p>
-
                         <a href="{{ url_for('perfil_local', local_id=local.id) }}"
                            class="btn btn-outline-primary btn-sm rounded-pill w-100 fw-bold">
                             Ver Histórias <i class="bi bi-arrow-right ms-1"></i>
@@ -77,25 +75,48 @@
     </div>
 </div>
 
-
+<!-- SCRIPT (Referenciando o ID único agora) -->
 <script>
-document.getElementById('busca_local').addEventListener('input', function(e) {
-    const termo = e.target.value;
-    if (termo.length < 2) return; // Só busca com 2 ou mais letras
+(function() {
+    const inputBusca = document.getElementById('busca_local');
+    const datalist = document.getElementById('lista-locais-autocomplete');
 
-    fetch(`/buscar_locais?q=${encodeURIComponent(termo)}`)
-        .then(response => response.json())
-        .then(data => {
-            const datalist = document.getElementById('lista-locais-autocomplete');
-            datalist.innerHTML = ''; // Limpa a lista anterior
+    if (!inputBusca) return;
 
-            data.forEach(local => {
-                const option = document.createElement('option');
-                option.value = local.nome;
-                // Opcional: mostrar o bairro para ajudar o usuário
-                option.textContent = `${local.nome} - ${local.bairro}`;
-                datalist.appendChild(option);
+    inputBusca.addEventListener('input', function(e) {
+        const termo = e.target.value;
+        if (termo.length < 2) {
+            datalist.innerHTML = '';
+            return;
+        }
+
+        fetch(`/buscar_locais?q=${encodeURIComponent(termo)}`)
+            .then(response => response.json())
+            .then(data => {
+                datalist.innerHTML = '';
+                data.forEach(local => {
+                    const option = document.createElement('option');
+                    option.value = local.nome;
+                    option.textContent = `Em ${local.bairro} (ID: ${local.id})`;
+                    datalist.appendChild(option);
+                });
             });
-        });
-});
+    });
+
+    inputBusca.addEventListener('change', function() {
+        const val = this.value;
+        const options = datalist.options;
+
+        for (let i = 0; i < options.length; i++) {
+            if (options[i].value === val) {
+                const match = options[i].textContent.match(/ID: (\d+)/);
+                if (match) {
+                    const localId = match[1];
+                    window.location.href = `/perfil_local/${localId}`;
+                }
+                break;
+            }
+        }
+    });
+})();
 </script>

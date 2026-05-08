@@ -573,28 +573,16 @@ def dashboard():
 
         # --- AJUSTE NA ABA LOCAIS (COM BUSCA E AUTOCOMPLETE) ---
         if aba == 'locais':
-            # Captura o termo que vem do campo de busca do HTML
-            termo_busca = request.args.get('busca_local', '').strip()
-
-            # Iniciamos a query com OUTERJOIN para não esconder locais novos
-            query = database.session.query(
+            # Esqueça o termo_busca aqui. A lista da tela é fixa e elitista (só com seguidores).
+            locais_populares = database.session.query(
                 Local,
                 func.count(VinculoUsuarioLocal.id).label('total')
-            ).outerjoin(VinculoUsuarioLocal, Local.id == VinculoUsuarioLocal.local_id)
-
-            # Se o usuário digitou algo na busca, filtramos aqui
-            if termo_busca:
-                query = query.filter(Local.nome.ilike(f'%{termo_busca}%'))
-
-            # Agrupamos e ordenamos (Mais populares primeiro, depois ordem alfabética)
-            locais_populares = query.group_by(Local.id) \
+            ).join(VinculoUsuarioLocal, Local.id == VinculoUsuarioLocal.local_id) \
+                .group_by(Local.id) \
+                .having(func.count(VinculoUsuarioLocal.id) > 0) \
                 .order_by(func.count(VinculoUsuarioLocal.id).desc(), Local.nome.asc()) \
                 .all()
 
-            print(f"DEBUG: Busca por '{termo_busca}' retornou {len(locais_populares)} locais.")
-
-        # 2. O print de confirmação final (Verifique se aparece no terminal agora)
-        print(f"DEBUG: Enviando {len(locais_populares)} locais para o HTML")
 
     # --- 6. FORMULÁRIOS ---
     form_p = FormPerfil(obj=perfil_usuario)
@@ -629,7 +617,7 @@ def dashboard():
                            categorias=categorias,
                            minhas_prefs_ids=minhas_prefs_ids,
                            notificacoes=notificacoes_sino,
-                           locais=locais_populares,
+                           locais_populares=locais_populares,
                            minhas_prefs_json=json.dumps(prefs_atuais_data))
 
 def apenas_pioneiros(f):
@@ -646,23 +634,38 @@ def apenas_pioneiros(f):
 @login_required
 def buscar_locais():
     termo = request.args.get('q', '').strip()
-
     if len(termo) < 2:
         return jsonify([])
 
-    # BUSCA AMPLIADA:
-    # Procuramos pelo nome, ignorando se é oficial ou sugestão por enquanto,
-    # para garantir que os testadores achem o que você cadastrou.
-    locais = Local.query.filter(
-        Local.nome.ilike(f'%{termo}%'),
-        Local.status == 'aprovado'  # Garanta que no seu POST o status seja 'aprovado'
-    ).limit(10).all()
+    try:
+        # Buscamos o termo no nome (Independente de estar ativo ou não)
+        # Mantemos apenas o filtro operacional para evitar exibir locais deletados/bloqueados
+        locais = Local.query.filter(
+            Local.nome.ilike(f'%{termo}%'),
+            Local.status_operacional == 'ativo'
+        ).limit(10).all()
 
-    return jsonify([{
-        'id': l.id,
-        'nome': l.nome,
-        'bairro': l.bairro or "Piracicaba"
-    } for l in locais])
+        resultado = []
+        for l in locais:
+            # Se não está ativo, recebe o selo de Memória
+            rotulo_memoria = " [MEMÓRIA HISTÓRICA]" if not l.esta_ativo else ""
+
+            # Localização dinâmica: Prioriza Bairro + Cidade, mas aceita o que houver
+            info_local = f"{l.bairro}, {l.cidade}" if l.bairro and l.cidade \
+                else (l.cidade or l.bairro or "Localização preservada")
+
+            resultado.append({
+                'id': l.id,
+                'nome': f"{l.nome}{rotulo_memoria}",
+                'localizacao': info_local
+            })
+
+        return jsonify(resultado)
+
+    except Exception as e:
+        # Se houver rabo para puxar, o log vai nos contar!
+        print(f"DEBUG AUTOCOMPLETE: Erro inesperado -> {e}")
+        return jsonify([]), 500
 
 
 @app.route('/api/buscar-interesses-onboarding')
@@ -2751,25 +2754,30 @@ def perfil_local_v2(local_id):
 
 @app.route("/explorar-locais")
 def lista_locais():
-    termo_busca = request.args.get('busca', '').strip()
+    # AJUSTADO: Pegando o nome correto do campo que está no HTML ('busca_local')
+    termo_busca = request.args.get('busca_local', '').strip()
 
-    # Usamos outerjoin para não excluir locais sem memórias/seguidores
-    # E func.count para contar quantos vínculos cada local possui
-    query = database.session.query(
-        Local,
-        func.count(VinculoUsuarioLocal.id).label('total_memorias')
-    ).outerjoin(VinculoUsuarioLocal, Local.id == VinculoUsuarioLocal.local_id)
-
-    # Se o usuário buscou algo, filtramos no banco todo
     if termo_busca:
-        query = query.filter(Local.nome.ilike(f'%{termo_busca}%'))
+        # Busca Ampla: Outerjoin para achar locais mesmo sem seguidores
+        query = database.session.query(
+            Local,
+            func.count(VinculoUsuarioLocal.id).label('total_memorias')
+        ).outerjoin(VinculoUsuarioLocal, Local.id == VinculoUsuarioLocal.local_id) \
+         .filter(Local.nome.ilike(f'%{termo_busca}%')) \
+         .group_by(Local.id) # ESSENCIAL: Adicionado aqui também
+    else:
+        # Lista Padrão: Join simples para filtrar apenas quem já tem "vida"
+        query = database.session.query(
+            Local,
+            func.count(VinculoUsuarioLocal.id).label('total_memorias')
+        ).join(VinculoUsuarioLocal, Local.id == VinculoUsuarioLocal.local_id) \
+         .group_by(Local.id) \
+         .having(func.count(VinculoUsuarioLocal.id) > 0)
 
-    # Agrupamos pelo ID do Local para a contagem funcionar
-    # E ordenamos: primeiro os que têm mais memórias, depois por nome
-    locais_resultados = query.group_by(Local.id) \
-        .order_by(func.count(VinculoUsuarioLocal.id).desc(), Local.nome.asc()) \
-        .all()
+    locais_resultados = query.order_by(func.count(VinculoUsuarioLocal.id).desc(), Local.nome.asc()).all()
 
+    # Importante: Verifique se o template esperado é 'publico/lista_locais.html'
+    # ou se deveria ser o dashboard com a aba locais.
     return render_template("publico/lista_locais.html",
                            locais=locais_resultados,
                            termo_busca=termo_busca)
