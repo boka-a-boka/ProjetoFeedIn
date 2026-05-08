@@ -938,21 +938,33 @@ def adicionar_grupo():
             database.session.add(grupo)
             database.session.flush()
 
-        # 4. Vínculo do Usuário (Membro do Grupo + Relato)
-        vinculo_existente = MembroGrupo.query.filter_by(id_usuario=current_user.id, id_grupo=grupo.id).first()
+            # 4. Vínculo do Usuário (Membro do Grupo)
+            vinculo_existente = MembroGrupo.query.filter_by(id_usuario=current_user.id, id_grupo=grupo.id).first()
 
-        if not vinculo_existente:
-            # Se for novo vínculo, salvamos também o relato/experiência se houver
-            novo_vinculo = MembroGrupo(
-                id_usuario=current_user.id,
-                id_grupo=grupo.id,
-                experiencia_usuario=experiencia_input  # Certifique-se que este campo existe no seu modelo MembroGrupo
-            )
-            database.session.add(novo_vinculo)
-            database.session.commit()
-            flash(f"'{nome_input}' registrado em {cidade_input} com sucesso!", "success")
-        else:
-            flash("Você já registrou esta memória neste período.", "info")
+            if not vinculo_existente:
+                # 4a. Criamos apenas o vínculo (que o banco aceita)
+                novo_vinculo = MembroGrupo(
+                    id_usuario=current_user.id,
+                    id_grupo=grupo.id
+                )
+                database.session.add(novo_vinculo)
+
+                # 4b. Criamos a Atividade (Onde o seu HTML já busca o relato)
+                if experiencia_input:
+                    # Verifique se o seu modelo chama 'Atividade' ou 'Postagem'
+                    # Baseado no seu HTML anterior, parece ser 'Atividade'
+                    nova_atividade = AtividadeLocal(
+                        id_criador=current_user.id,
+                        id_local=local.id,
+                        nome=f"Memória em {local.nome}",
+                        periodo_estimado=periodo_input,
+                        descricao=experiencia_input,
+                        data_criacao=datetime.now(timezone.utc)
+                    )
+                    database.session.add(nova_atividade)
+
+                database.session.commit()
+                flash(f"'{nome_input}' registrado com sucesso!", "success")
 
     except Exception as e:
         database.session.rollback()
@@ -1579,7 +1591,7 @@ def admin_novo_local():
 
                 # Campos essenciais para o funcionamento
                 esta_ativo=status_real,
-                status_operacional="ativo" if status_real else "encerrado",
+                status_operacional="ativo",
 
                 verificado=True,
                 id_indicador=current_user.id,
