@@ -169,5 +169,105 @@
 </div> <!-- AQUI FECHA A DIV ANIMATE__FADEIN CORRETAMENTE -->
 
 <script>
-// ... (seu script permanece igual)
+// Declaramos as variáveis no escopo global para que a função abrirFormularioCompleto as enxergue
+let modalConfirmacao;
+let modalFormulario;
+
+document.addEventListener('DOMContentLoaded', function() {
+    const inputBusca = document.getElementById('busca_local');
+    const datalist = document.getElementById('lista-locais-autocomplete');
+    const formBusca = document.getElementById('form-busca-local');
+
+    // Inicialização segura dos Modais do Bootstrap
+    const elConfirm = document.getElementById('modalConfirmarCadastro');
+    const elForm = document.getElementById('modalFormularioCompleto');
+
+    if (elConfirm) modalConfirmacao = new bootstrap.Modal(elConfirm);
+    if (elForm) modalFormulario = new bootstrap.Modal(elForm);
+
+    if (!inputBusca || !formBusca) return;
+
+    // 1. AUTOCOMPLETE DINÂMICO
+    inputBusca.addEventListener('input', function(e) {
+        const termo = e.target.value;
+
+        // Só busca se tiver 2 ou mais caracteres
+        if (termo.length < 2) {
+            datalist.innerHTML = '';
+            return;
+        }
+
+        fetch(`/buscar_locais?q=${encodeURIComponent(termo)}`)
+            .then(res => res.json())
+            .then(data => {
+                datalist.innerHTML = '';
+                data.forEach(local => {
+                    const option = document.createElement('option');
+                    // O valor que aparece no input ao selecionar
+                    option.value = local.nome;
+                    // O texto auxiliar que ajuda o JS a achar o ID
+                    option.textContent = `${local.info_exibicao} | ID: ${local.id}`;
+                    datalist.appendChild(option);
+                });
+            })
+            .catch(err => console.error("Erro no autocomplete:", err));
+    });
+
+    // 2. INTERCEPTAÇÃO DO SUBMIT
+    formBusca.addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        const val = inputBusca.value.trim();
+        if (val.length === 0) return;
+
+        const options = datalist.options;
+        let idEncontrado = null;
+
+        // Verifica se o texto digitado bate exatamente com alguma opção do datalist
+        for (let i = 0; i < options.length; i++) {
+            if (options[i].value.toLowerCase() === val.toLowerCase()) {
+                const match = options[i].textContent.match(/ID: (\d+)/);
+                if (match) {
+                    idEncontrado = match[1];
+                    break;
+                }
+            }
+        }
+
+        if (idEncontrado) {
+            // Caso exista no banco, redireciona para o perfil do local
+            window.location.href = `/local_v2/${idEncontrado}`;
+        } else {
+            // Caso não exista, abre o fluxo de novo cadastro (se tiver min 3 letras)
+            if (val.length >= 3) {
+                const displayNome = document.getElementById('nome_digitado_display');
+                if (displayNome) displayNome.innerText = val;
+                if (modalConfirmacao) modalConfirmacao.show();
+            }
+        }
+    });
+});
+
+/**
+ * Função global chamada pelo botão do primeiro modal
+ */
+function abrirFormularioCompleto() {
+    const displayNome = document.getElementById('nome_digitado_display');
+    const inputFinal = document.getElementById('final_nome_local');
+
+    if (!displayNome || !inputFinal) return;
+
+    const nomeOriginal = displayNome.innerText;
+
+    // Fecha o modal de pergunta
+    if (modalConfirmacao) modalConfirmacao.hide();
+
+    // Preenche o nome no formulário técnico
+    inputFinal.value = nomeOriginal;
+
+    // Abre o formulário de cadastro completo após um pequeno delay para a transição
+    setTimeout(() => {
+        if (modalFormulario) modalFormulario.show();
+    }, 400);
+}
 </script>
