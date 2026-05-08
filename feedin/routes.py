@@ -653,12 +653,9 @@ def apenas_pioneiros(f):
 @login_required
 def buscar_locais():
     termo = request.args.get('q', '').strip()
-    if len(termo) < 2:
-        return jsonify([])
+    if len(termo) < 2: return jsonify([])
 
     try:
-        # Buscamos o termo no nome (Independente de estar ativo ou não)
-        # Mantemos apenas o filtro operacional para evitar exibir locais deletados/bloqueados
         locais = Local.query.filter(
             Local.nome.ilike(f'%{termo}%'),
             Local.status_operacional == 'ativo'
@@ -666,24 +663,20 @@ def buscar_locais():
 
         resultado = []
         for l in locais:
-            # Se não está ativo, recebe o selo de Memória
-            rotulo_memoria = " [MEMÓRIA HISTÓRICA]" if not l.esta_ativo else ""
+            # O selo visual vai apenas para a info de apoio
+            selo = " [MEMÓRIA HISTÓRICA]" if not l.esta_ativo else ""
 
-            # Localização dinâmica: Prioriza Bairro + Cidade, mas aceita o que houver
             info_local = f"{l.bairro}, {l.cidade}" if l.bairro and l.cidade \
                 else (l.cidade or l.bairro or "Localização preservada")
 
             resultado.append({
                 'id': l.id,
-                'nome': f"{l.nome}{rotulo_memoria}",
-                'info_exibicao': f"em {info_local} (ID: {l.id})"  # Criamos uma string facilitadora
+                'nome': l.nome,  # Nome puro para evitar erro de 'Not Found'
+                'info_exibicao': f"{selo} em {info_local} (ID: {l.id})"
             })
-
         return jsonify(resultado)
-
     except Exception as e:
-        # Se houver rabo para puxar, o log vai nos contar!
-        print(f"DEBUG AUTOCOMPLETE: Erro inesperado -> {e}")
+        print(f"Erro: {e}")
         return jsonify([]), 500
 
 

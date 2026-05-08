@@ -15,17 +15,20 @@
     <div class="card border-0 shadow-sm rounded-4 mb-4">
         <div class="card-body p-3">
             <form action="{{ url_for('dashboard') }}" method="GET" class="d-flex gap-2" id="form-busca-local">
+                <!-- Parâmetros Ocultos agrupados -->
                 <input type="hidden" name="aba" value="locais">
+                <input type="hidden" name="id_local_selecionado" id="id_local_selecionado">
+
                 <div class="input-group">
                     <span class="input-group-text bg-light border-0"><i class="bi bi-search text-muted"></i></span>
                     <input type="text" name="busca_local" id="busca_local"
                        class="form-control border-0 bg-light"
                        placeholder="Procurar um local histórico..."
-                       value=""
                        list="lista-locais-autocomplete"
                        autocomplete="off">
                     <datalist id="lista-locais-autocomplete"></datalist>
                 </div>
+
                 <button type="submit" class="btn btn-primary rounded-pill px-4 fw-bold">Buscar</button>
             </form>
         </div>
@@ -169,109 +172,61 @@
 </div> <!-- AQUI FECHA A DIV ANIMATE__FADEIN CORRETAMENTE -->
 
 <script>
-// Declaramos as variáveis no escopo global para que a função abrirFormularioCompleto as enxergue
-let modalConfirmacao;
-let modalFormulario;
-
 document.addEventListener('DOMContentLoaded', function() {
     const inputBusca = document.getElementById('busca_local');
     const datalist = document.getElementById('lista-locais-autocomplete');
     const formBusca = document.getElementById('form-busca-local');
 
-    // Inicialização segura dos Modais do Bootstrap
+    // Inicializa modais apenas se existirem na página
     const elConfirm = document.getElementById('modalConfirmarCadastro');
-    const elForm = document.getElementById('modalFormularioCompleto');
-
-    if (elConfirm) modalConfirmacao = new bootstrap.Modal(elConfirm);
-    if (elForm) modalFormulario = new bootstrap.Modal(elForm);
+    const modalConfirmacao = elConfirm ? new bootstrap.Modal(elConfirm) : null;
 
     if (!inputBusca || !formBusca) return;
 
-    // 1. AUTOCOMPLETE DINÂMICO
+    // 1. Alimenta o Autocomplete
     inputBusca.addEventListener('input', function(e) {
         const termo = e.target.value;
+        if (termo.length < 2) return;
 
-        // Só busca se tiver 2 ou mais caracteres
-        if (termo.length < 2) {
-            datalist.innerHTML = '';
-            return;
-        }
-
-fetch(`/buscar_locais?q=${encodeURIComponent(termo)}`)
+        fetch(`/buscar_locais?q=${encodeURIComponent(termo)}`)
             .then(res => res.json())
             .then(data => {
                 datalist.innerHTML = '';
                 data.forEach(local => {
                     const option = document.createElement('option');
-                    // IMPORTANTE: Mantemos o valor limpo para o input
                     option.value = local.nome;
-
-                    // Guardamos o ID num atributo de dados para não depender de Regex
-                    option.dataset.id = local.id;
-
-                    // Mostramos a info extra (ex: bairro ou memória histórica)
-                    option.textContent = `${local.info_exibicao}`;
+                    option.dataset.id = local.id; // Guarda o ID real aqui
+                    option.textContent = local.info_exibicao;
                     datalist.appendChild(option);
                 });
-            })
-            .catch(err => console.error("Erro no autocomplete:", err));
+            });
     });
 
-    // 2. INTERCEPTAÇÃO DO SUBMIT
+    // 2. Executa a Busca
     formBusca.addEventListener('submit', function(e) {
         e.preventDefault();
-
-        const val = inputBusca.value.trim();
-        if (val.length === 0) return;
+        const textoDigitado = inputBusca.value.trim();
+        if (!textoDigitado) return;
 
         const options = datalist.options;
         let idEncontrado = null;
 
-        // Verifica se o texto digitado bate exatamente com alguma opção do datalist
+        // Procura o ID na lista de sugestões
         for (let i = 0; i < options.length; i++) {
-            if (options[i].value.toLowerCase() === val.toLowerCase()) {
-                const match = options[i].textContent.match(/ID: (\d+)/);
-                if (match) {
-                    idEncontrado = match[1];
-                    break;
-                }
+            if (options[i].value.toLowerCase() === textoDigitado.toLowerCase()) {
+                idEncontrado = options[i].dataset.id;
+                break;
             }
         }
 
         if (idEncontrado) {
-            // Caso exista no banco, redireciona para o perfil do local
-            window.location.href = `/local_v2/${idEncontrado}`;
-        } else {
-            // Caso não exista, abre o fluxo de novo cadastro (se tiver min 3 letras)
-            if (val.length >= 3) {
-                const displayNome = document.getElementById('nome_digitado_display');
-                if (displayNome) displayNome.innerText = val;
-                if (modalConfirmacao) modalConfirmacao.show();
-            }
+            // Redireciona para a rota correta que você definiu no Flask
+            window.location.href = "/local/" + idEncontrado;
+        } else if (textoDigitado.length >= 3 && modalConfirmacao) {
+            // Se não encontrou nada, sugere cadastro
+            document.getElementById('nome_digitado_display').innerText = textoDigitado;
+            modalConfirmacao.show();
         }
     });
 });
-
-/**
- * Função global chamada pelo botão do primeiro modal
- */
-function abrirFormularioCompleto() {
-    const displayNome = document.getElementById('nome_digitado_display');
-    const inputFinal = document.getElementById('final_nome_local');
-
-    if (!displayNome || !inputFinal) return;
-
-    const nomeOriginal = displayNome.innerText;
-
-    // Fecha o modal de pergunta
-    if (modalConfirmacao) modalConfirmacao.hide();
-
-    // Preenche o nome no formulário técnico
-    inputFinal.value = nomeOriginal;
-
-    // Abre o formulário de cadastro completo após um pequeno delay para a transição
-    setTimeout(() => {
-        if (modalFormulario) modalFormulario.show();
-    }, 400);
-}
 </script>
