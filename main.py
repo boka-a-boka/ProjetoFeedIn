@@ -5,4 +5,4 @@ with app.app_context():
     print("Banco de dados verificado com sucesso!")
 
 if __name__ == "__main__":
-    app.run()
+    app.run(debug=True)

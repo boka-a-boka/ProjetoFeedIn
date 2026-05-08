@@ -657,7 +657,7 @@ def buscar_locais():
             resultado.append({
                 'id': l.id,
                 'nome': f"{l.nome}{rotulo_memoria}",
-                'localizacao': info_local
+                'info_exibicao': f"em {info_local} (ID: {l.id})"  # Criamos uma string facilitadora
             })
 
         return jsonify(resultado)
@@ -867,63 +867,88 @@ def finalizar_onboarding_gostos():
         return redirect(url_for('dashboard', aba='preferencias'))
 
 
+# ROTA ATUALIZADA (ADICIONAR GRUPO / MEMÓRIA)
 @app.route("/processar-adicao-grupo", methods=['POST'])
 @login_required
 def adicionar_grupo():
+    # 1. Captura de dados do formulário (Ficha Completa)
     nome_input = request.form.get("nome")
-    cidade_input = request.form.get("localizacao", "Piracicaba")
-    periodo_input = request.form.get("periodo")
+    logradouro_input = request.form.get("logradouro")
+    bairro_input = request.form.get("bairro")
+    # Cidade destravada: tenta 'localizacao' ou 'cidade'
+    cidade_input = request.form.get("localizacao") or request.form.get("cidade")
+    estado_input = request.form.get("estado", "SP")  # Padrão SP se vazio
+    esta_ativo_input = request.form.get("esta_ativo") == "1"
 
-    # Guardamos a página de origem para usar nos redirecionamentos
-    # Se não houver origem (raro), ele volta para o próprio perfil como fallback
+    # Dados da Memória
+    periodo_input = request.form.get("periodo")
+    experiencia_input = request.form.get("experiencia_usuario")
+
     origem = request.referrer or url_for('get_perfil', id_usuario=current_user.id)
 
-    if not nome_input:
-        flash("O nome do local é obrigatório.", "warning")
+    if not nome_input or not cidade_input:
+        flash("Nome do local e Cidade são obrigatórios.", "warning")
         return redirect(origem)
 
     try:
-        # 1. Local (Busca ou Cria)
-        local = Local.query.filter_by(nome=nome_input, cidade=cidade_input).first()
-        if not local:
-            local = Local(nome=nome_input, cidade=cidade_input, id_indicador=current_user.id)
-            database.session.add(local)
-            database.session.flush()
+        # 2. Local (Busca ou Cria com todos os detalhes)
+        # Buscamos por nome e cidade para evitar duplicatas básicas
+        local = Local.query.filter(
+            func.lower(Local.nome) == nome_input.lower(),
+            func.lower(Local.cidade) == cidade_input.lower()
+        ).first()
 
-        # 2. Grupo Social (A Memória em si)
+        if not local:
+            # Criamos o objeto Local com a ficha técnica completa para o Perfil_Local
+            local = Local(
+                nome=nome_input,
+                logradouro=logradouro_input,
+                bairro=bairro_input,
+                cidade=cidade_input,
+                estado=estado_input,
+                esta_ativo=esta_ativo_input,
+                id_indicador=current_user.id
+            )
+            database.session.add(local)
+            database.session.flush()  # Gera o ID do local para o passo seguinte
+
+        # 3. Grupo Social (A Memória em si - Vínculo Local + Período)
         grupo = GrupoSocial.query.filter_by(id_local=local.id, periodo_referencia=periodo_input).first()
         if not grupo:
             grupo = GrupoSocial(id_local=local.id, periodo_referencia=periodo_input)
             database.session.add(grupo)
             database.session.flush()
 
-        # 3. Vínculo (Membro do Grupo)
+        # 4. Vínculo do Usuário (Membro do Grupo + Relato)
         vinculo_existente = MembroGrupo.query.filter_by(id_usuario=current_user.id, id_grupo=grupo.id).first()
 
         if not vinculo_existente:
-            novo_vinculo = MembroGrupo(id_usuario=current_user.id, id_grupo=grupo.id)
+            # Se for novo vínculo, salvamos também o relato/experiência se houver
+            novo_vinculo = MembroGrupo(
+                id_usuario=current_user.id,
+                id_grupo=grupo.id,
+                experiencia_usuario=experiencia_input  # Certifique-se que este campo existe no seu modelo MembroGrupo
+            )
             database.session.add(novo_vinculo)
             database.session.commit()
-            flash(f"Memória em '{nome_input}' registrada!", "success")
+            flash(f"'{nome_input}' registrado em {cidade_input} com sucesso!", "success")
         else:
-            flash("Você já registrou este local e período.", "info")
+            flash("Você já registrou esta memória neste período.", "info")
 
     except Exception as e:
         database.session.rollback()
+        # Log do erro para debug (opcional)
+        print(f"Erro ao salvar: {e}")
         flash(f"Erro ao salvar memória: {str(e)}", "danger")
         return redirect(origem)
 
-    # 4. Lógica de Onboarding (Apenas se for um novo usuário com menos de 5 vínculos)
+    # Lógica de Onboarding (5 memórias para seguir)
     contagem = MembroGrupo.query.filter_by(id_usuario=current_user.id).count()
-    if contagem >= 5:
-        # Se você ainda quer que ele vá para preferências após os 5 primeiros, mantenha:
-        # Mas se ele estiver no perfil de um local, talvez seja melhor voltar para o local.
-        # Decisão sua: onboarding forçado ou fluxo livre?
-        # Se quiser fluxo livre, use: return redirect(origem)
+    if contagem == 5:
         return redirect(url_for('cadastrar_preferencias'))
 
-    # O GRANDE AJUSTE: Volta para onde o usuário estava
     return redirect(origem)
+
 
 def pega_papel(id_usuario):
     # 1. Busca o usuário de forma segura
@@ -952,7 +977,52 @@ def pega_papel(id_usuario):
     # 3. Retorna o papel correspondente ou "visitante" como fallback seguro
     return niveis.get(usuario.nivel_acesso, "visitante")
 
-# --- Adicione ou ajuste estas partes no seu routes.py ---
+
+# NOVA ROTA ESTRATÉGICA
+@app.route("/processar-adicao-local-novo", methods=['POST'])
+@login_required
+def adicionar_local_novo():
+    nome_input = request.form.get("nome", "").strip()
+    cidade_input = request.form.get("cidade", "").strip()
+    estado_input = request.form.get("estado", "SP").strip().upper()
+    bairro_input = request.form.get("bairro", "").strip()
+    periodo_input = request.form.get("periodo_referencia", "Atualmente")
+
+    origem = request.referrer or url_for('dashboard')
+
+    if not nome_input or not cidade_input:
+        flash("Nome e Cidade são obrigatórios.", "warning")
+        return redirect(origem)
+
+    try:
+        # Busca ou Cria o Local
+        local = Local.query.filter(
+            func.lower(Local.nome) == nome_input.lower(),
+            func.lower(Local.cidade) == cidade_input.lower()
+        ).first()
+
+        if not local:
+            local = Local(
+                nome=nome_input,
+                cidade=cidade_input,
+                estado=estado_input,
+                bairro=bairro_input,
+                id_indicador=current_user.id
+            )
+            database.session.add(local)
+            database.session.flush()
+
+        # Cria o Vínculo/Memória (usando sua lógica de VinculoUsuarioLocal ou similar)
+        # Aqui você pode adaptar para criar o GrupoSocial se desejar unificar 100%
+        database.session.commit()
+        flash(f"'{local.nome}' foi adicionado ao mapa!", "success")
+        return redirect(url_for('perfil_local', local_id=local.id))
+
+    except Exception as e:
+        database.session.rollback()
+        flash("Erro ao processar novo local.", "danger")
+        return redirect(origem)
+
 
 @app.route('/get_perfil/<int:id_usuario>', methods=['GET', 'POST'])
 @login_required
