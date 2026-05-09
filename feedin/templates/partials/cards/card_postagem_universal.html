@@ -1,27 +1,23 @@
 {#
     CARD UNIVERSAL - VERSÃO "PIRACICABA MEMÓRIA VIVA"
-    Foco: Estabilidade e Resgate de Memória.
+    Ajustes Finais: Nome do local explícito, marcações e tags em linhas separadas.
 #}
 
-{# 1. Definição das Variáveis de Controle - Simplificada e Segura #}
+{# 1. Definição das Variáveis de Controle #}
 {% set atividade_id = atividade.id if atividade.id is defined else atividade['id'] %}
 
 {% if atividade is mapping %}
-    {# Se for Dicionário #}
     {% set autor_final = atividade.get('autor_objeto') or atividade.get('autor') %}
     {% set imagem_final = atividade.get('imagem_url') or (atividade['objeto_original'].imagem_url if atividade.get('objeto_original') else None) %}
     {% set conteudo_final = atividade.get('conteudo_exibicao') or atividade.get('conteudo') %}
     {% set post_obj = atividade.get('objeto_original') %}
 {% else %}
-    {# Se for Objeto SQLAlchemy (Atividade ou Postagem) #}
     {% if atividade.__class__.__name__ == 'Postagem' %}
-        {# Se clicou no perfil, o objeto é a Postagem direta #}
         {% set autor_final = atividade.autor %}
         {% set imagem_final = atividade.imagem_url %}
         {% set conteudo_final = atividade.conteudo %}
         {% set post_obj = atividade %}
     {% else %}
-        {# Se for o objeto Atividade (Feed/Local) #}
         {% set autor_final = atividade.autor_objeto if atividade.autor_objeto else atividade.autor %}
         {% set imagem_final = atividade.imagem_url if atividade.imagem_url else (atividade.objeto_original.imagem_url if atividade.objeto_original else None) %}
         {% set conteudo_final = atividade.conteudo_exibicao if atividade.conteudo_exibicao else atividade.conteudo %}
@@ -40,29 +36,24 @@
                 {{ 'border-pioneiro shadow-lg' if eh_memoria_local or eh_conexao_rede }}"
          id="post-{{ atividade_id }}">
 
-        {# Caso 1: O Lado Festivo (Vínculos e Pioneiros) #}
+        {# --- CASO 1: VÍNCULOS E PIONEIROS --- #}
         {% if eh_memoria_local or eh_conexao_rede %}
             <div class="card-body p-4 bg-white">
                 <div class="mb-4 p-3 rounded-4 text-center"
                      style="background: linear-gradient(45deg, #4e73df10, #1cc88a10); border: 1px dashed #4e73df40 !important;">
                     <span class="text-primary fw-bold small text-uppercase" style="letter-spacing: 1px;">
                         <i class="bi bi-stars me-2"></i>
-                        {% if eh_memoria_local %}
-                            Agora faz parte da sua rede de confiança!
-                        {% else %}
-                            Nova Conexão na Rede de Confiança
-                        {% endif %}
+                        {{ 'Agora faz parte da sua rede de confiança!' if eh_memoria_local else 'Nova Conexão na Rede de Confiança' }}
                         <i class="bi bi-stars ms-2"></i>
                     </span>
                 </div>
 
                 <div class="d-flex align-items-center mb-3">
-                     {# Ajustado para autor_final #}
                      <img src="{{ url_for('servir_foto_perfil', usuario_id=autor_final.id) }}"
                           class="rounded-circle border border-3 border-white shadow" width="55" height="55" style="object-fit: cover;">
                      <div class="ms-3">
                          <h6 class="fw-bold text-dark mb-0">
-                             {{ autor_final.perfil.nome_completo if (autor_final.perfil and autor_final.perfil.nome_completo) else autor_final.username }}
+                             {{ autor_final.perfil.nome_completo or autor_final.username }}
                          </h6>
                          <small class="text-primary fw-bold">@{{ autor_final.username }}</small>
                      </div>
@@ -75,20 +66,18 @@
                             <i class="bi bi-clock-history me-1"></i> {{ atividade.periodo_estimado }}
                         </p>
                     {% endif %}
-                    <p class="texto-acontecimento mb-0">
-                        "{{ conteudo_final or 'Revivendo bons momentos.' }}"
-                    </p>
+                    <p class="texto-acontecimento mb-0">"{{ conteudo_final or 'Revivendo bons momentos.' }}"</p>
                 </div>
             </div>
 
-        {# Caso 2: Postagem Padrão #}
+        {# --- CASO 2: POSTAGEM PADRÃO --- #}
         {% else %}
             <div class="p-3 d-flex align-items-center justify-content-between">
                 <div class="d-flex align-items-center">
                     <img src="{{ url_for('servir_foto_perfil', usuario_id=autor_final.id) }}" width="42" height="42" class="rounded-circle me-2 border object-fit-cover">
                     <div>
                         <span class="text-dark fw-bold small">
-                            {{ autor_final.perfil.nome_completo if (autor_final.perfil and autor_final.perfil.nome_completo) else autor_final.username }}
+                            {{ autor_final.perfil.nome_completo or autor_final.username }}
                         </span>
                         <small class="text-muted d-block" style="font-size: 0.7rem;">
                             {{ post_obj.data_criacao.strftime('%d/%m/%Y') if (post_obj and post_obj.data_criacao) else (atividade.data_criacao.strftime('%d/%m/%Y') if atividade.data_criacao else '') }}
@@ -97,83 +86,78 @@
                 </div>
             </div>
 
-            {# BLOCO DA FOTO COM OVERLAY DE MARCAÇÕES #}
             {% if imagem_final %}
                 <div class="position-relative bg-light overflow-hidden rounded-4 mx-3 mb-2 shadow-sm">
                     <img src="{{ url_for('static', filename='uploads/posts/' ~ imagem_final) }}"
                          class="img-fluid w-100 object-fit-cover"
-                         style="max-height: 500px;"
-                         alt="Memória Viva">
+                         style="max-height: 500px;" alt="Memória Viva">
 
-                    {# Overlay de Pessoas Marcadas - Dentro do Card Universal #}
-                    {% if atividade and atividade.pessoas_marcadas %}
-                        <div class="position-absolute bottom-0 start-0 w-100 p-2" style="background: linear-gradient(transparent, rgba(0,0,0,0.8)); z-index: 5;">
-                            <div class="d-flex flex-wrap gap-1">
-                                {% for pessoa in atividade.pessoas_marcadas %}
-                                    <a href="{{ url_for('ver_perfil', usuario_id=pessoa.id) }}"
-                                       class="badge rounded-pill bg-white text-dark text-decoration-none shadow-sm"
-                                       style="font-size: 0.6rem; padding: 2px 6px; opacity: 0.9; font-weight: 600;">
-                                       @{{ pessoa.username.lower() }}
-                                    </a>
-                                {% endfor %}
-                            </div>
-                        </div>
-                    {% endif %}
                 </div>
             {% endif %}
 
             <div class="p-3">
-                <p class="card-text text-dark" style="font-size: 0.95rem; line-height: 1.5;">
+                <p class="card-text text-dark mb-3" style="font-size: 0.95rem; line-height: 1.5;">
                     {{ conteudo_final }}
                 </p>
+
+                {# LINHA 1: PESSOAS MARCADAS #}
+                {% if atividade and atividade.pessoas_marcadas %}
+                <div class="mb-2">
+                    <div class="d-flex flex-wrap gap-1 align-items-center">
+                        <i class="bi bi-people text-muted small me-1"></i>
+                        <span class="text-muted small me-1" style="font-size: 0.75rem;"></span>
+                        {% for pessoa in atividade.pessoas_marcadas %}
+                            <a href="{{ url_for('ver_perfil', usuario_id=pessoa.id) }}" class="text-decoration-none">
+                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill fw-normal" style="font-size: 0.7rem;">
+                                    @{{ pessoa.username }}
+                                </span>
+                            </a>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {# LINHA 2: TAGS DE AFINIDADE #}
+                {% if post_obj and post_obj.tags_afinidade %}
+                <div class="mt-2 border-top pt-2" style="border-top-style: dotted !important; opacity: 0.6;">
+                    <div class="d-flex flex-wrap gap-2">
+                        {% for tag in post_obj.tags_afinidade %}
+                            <span class="fw-normal" style="font-size: 0.65rem; color: #0d6efd;">
+                                #{{ tag.nome.replace(' ', '') }}
+                            </span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
             </div>
         {% endif %}
 
-        {# Rodapé Unificado - Garante que as reações apareçam em qualquer perfil #}
-        <div class="px-3 pb-3">
-            <div class="pt-2 d-flex justify-content-between align-items-center">
-                <div>
-                    {# Mostra o local apenas se não estivermos na página do próprio local #}
-                    {% if atividade.id_local and context_origem != 'perfil_local' %}
-                        {% set nome_exibicao = nome_local if nome_local else "Ver Local" %}
-                        <a href="{{ url_for('perfil_local', local_id=atividade.id_local) }}" class="text-decoration-none">
-                            <span class="badge rounded-pill bg-light text-primary border-0 py-2 px-3 shadow-xs" style="font-size: 0.75rem;">
-                                <i class="bi bi-geo-alt-fill me-1"></i> {{ nome_exibicao }}
-                            </span>
-                        </a>
-                    {% endif %}
-                </div>
+{# RODAPÉ: Exibição do Local usando o relacionamento 'local_foco' #}
+<div class="px-3 pb-3">
+    <div class="pt-2 d-flex justify-content-between align-items-center">
+        <div>
+            {#
+               Se existe o ID, tentamos exibir.
+               Usamos 'local_foco' que é o nome definido no seu SQLAlchemy.
+            #}
+            {% if post_obj.id_local and context_origem != 'perfil_local' %}
+                <a href="{{ url_for('perfil_local', local_id=post_obj.id_local) }}" class="text-decoration-none">
+                    <span class="badge rounded-pill bg-light text-primary border py-2 px-3 shadow-xs"
+                          style="font-size: 0.8rem; border-color: #4e73df20 !important;">
+                        <i class="bi bi-geo-alt-fill me-1 text-danger"></i>
+                        <span class="fw-bold">
+                            {# Acessa o nome através do relacionamento correto #}
+                            {{ post_obj.local_foco.nome if post_obj.local_foco else "Local" }}
+                        </span>
+                    </span>
+                </a>
+            {% endif %}
+        </div>
 
-                {# REAÇÕES: Removida qualquer trava de IF que use context_origem #}
-                <div class="d-flex align-items-center gap-3">
-                    {% include "partials/cards/_footer_reacoes.html" %}
-                </div>
-            </div>
+        <div class="d-flex align-items-center gap-3">
+            {% include "partials/cards/_footer_reacoes.html" %}
         </div>
     </div>
+</div>
+    </div>
 {% endif %}
-
-<style>
-/* Tipografia diferenciada para o resgate de memórias */
-.texto-acontecimento {
-    font-size: 1.15rem;
-    font-weight: 500;
-    line-height: 1.5;
-    letter-spacing: -0.01em; /* Mantém o toque elegante */
-    color: #2c3e50;
-    font-style: italic;
-}
-
-/* Identidade visual dos Pioneiros e Conexões */
-.border-pioneiro {
-    border-left: 6px solid #4e73df !important; /* Cor firme da rede de confiança */
-    background: linear-gradient(to right, #ffffff, #f9faff);
-    transition: all 0.3s ease;
-}
-
-/* Feedback visual ao interagir no Feed */
-.border-pioneiro:hover {
-    transform: scale(1.01);
-    box-shadow: 0 10px 25px rgba(78, 115, 223, 0.15) !important;
-}
-</style>
