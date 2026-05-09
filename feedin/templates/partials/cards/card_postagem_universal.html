@@ -3,6 +3,32 @@
     Ajustes Finais: Nome do local explícito, marcações e tags em linhas separadas.
 #}
 
+<style>
+    /* Estilo "Jornal" (Usado no Feed) */
+    .img-miniatura-feed {
+        width: 100px;
+        height: auto;
+        max-height: 140px;
+        object-fit: contain;
+        float: left;
+        margin-right: 15px;
+        margin-bottom: 8px;
+        border-radius: 8px;
+        background-color: #f8f9fa;
+    }
+
+    /* Estilo "Respeitoso" (Para quando queremos ver a foto toda com destaque) */
+    .img-full-respeitosa {
+        width: 100%;
+        max-height: 550px; /* Limite para não estourar a tela */
+        object-fit: contain; /* Mostra 100% da foto, sem cortes */
+        background-color: #000; /* Fundo preto estilo galeria para preencher as sobras */
+        border-radius: 12px;
+        display: block;
+        margin-bottom: 15px;
+    }
+</style>
+
 {# 1. Definição das Variáveis de Controle #}
 {% set atividade_id = atividade.id if atividade.id is defined else atividade['id'] %}
 
@@ -90,12 +116,19 @@
 
             <div class="p-3">
                 {# IMAGEM FLUTUANDO À ESQUERDA DENTRO DO TEXTO #}
-                {% if imagem_final -%}
-                    <a href="{{ url_for('ver_perfil', usuario_id=autor_final.id) }}#post-{{ atividade_id }}">
-                        <img src="{{ url_for('static', filename='uploads/posts/' + imagem_final) }}"
-                             class="img-wrap-text shadow-sm" alt="Memória Viva">
-                    </a>
-                {%- endif %}
+{% if imagem_final %}
+        {% if context_origem == 'perfil_publico' or context_origem == 'perfil_local' %}
+            {# NO PERFIL: Foto com destaque e fundo preto para respeitar proporções (3:2, 16:9, etc) #}
+            <div class="position-relative overflow-hidden mb-3 shadow-sm" style="border-radius: 12px; background-color: #000;">
+                <img src="{{ url_for('static', filename='uploads/posts/' + imagem_final) }}"
+                     class="img-full-respeitosa" alt="Memória Viva">
+            </div>
+        {% else %}
+            {# NO FEED: Miniatura flutuante estilo jornal #}
+            <img src="{{ url_for('static', filename='uploads/posts/' + imagem_final) }}"
+                 class="img-miniatura-feed shadow-sm" alt="Memória Viva">
+        {% endif %}
+    {% endif %}
 
                 {# TEXTO DA POSTAGEM #}
                 <p class="card-text text-dark mb-3 texto-postagem" style="white-space: pre-line; font-size: 1.1rem; line-height: 1.4; font-weight: 500;">
