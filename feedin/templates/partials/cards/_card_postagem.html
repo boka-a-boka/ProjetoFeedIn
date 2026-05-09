@@ -20,6 +20,27 @@
     padding-top: 0 !important;
     display: inline; /* Ajuda a eliminar blocos de parágrafo que criam quebras */
 }
+
+/* O container mantém a altura máxima, mas a imagem se adapta */
+.container-memoria {
+    background-color: #f8f9fa; /* Um cinza bem claro para o fundo */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-height: 500px; /* Sua altura limite atual */
+    overflow: hidden;
+    border-radius: 12px;
+}
+
+.img-respeitosa {
+    max-width: 100%;
+    max-height: 500px;
+    width: auto;
+    height: auto;
+    /* O segredo: contain garante que 100% da foto apareça */
+    object-fit: contain;
+}
 </style>
 
 {# 1. LÓGICA DE DADOS #}
@@ -102,11 +123,16 @@
 
         {# CORPO DO TEXTO (Lógica festiva interna de posts manuais) #}
 <div class="p-4 pt-2" style="display: block; overflow: hidden;">
-    {% if imagem -%}
-        <a href="{{ url_for('ver_perfil', usuario_id=autor.id) }}#post-{{ id_post }}">
-            <img src="{{ url_for('static', filename='uploads/posts/' ~ imagem) }}" class="img-wrap-text">
+{# IMAGEM DA POSTAGEM - AGORA RESPEITANDO FORMATOS #}
+    {% if imagem %}
+        <a href="{{ url_for('ver_perfil', usuario_id=autor.id) }}#post-{{ id_post }}" class="d-block px-3">
+            <div class="container-memoria shadow-sm">
+                <img src="{{ url_for('static', filename='uploads/posts/' ~ imagem) }}"
+                     class="img-respeitosa"
+                     alt="Memória Viva">
+            </div>
         </a>
-    {%- endif -%}
+    {% endif %}
 
     {# O segredo aqui é o .strip() e garantir que não haja NADA entre a imagem e o texto no código #}
     <p class="text-dark mb-0 texto-postagem" style="white-space: pre-line; font-size: 1.1rem; line-height: 1.4; font-weight: 500; margin: 0; padding: 0;">{{- texto.strip() | safe -}}</p>
