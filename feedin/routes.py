@@ -221,7 +221,7 @@ def login():
 def esqueci_senha():
     if request.method == 'POST':
         email = request.form.get('email')
-        user = User.query.filter_by(email=email).first()
+        user = Usuario.query.filter_by(email=email).first()
         if user:
             # Aqui no futuro entra o disparo de e-mail real.
             # Por ora, você pode redirecionar para uma página de sucesso
@@ -1045,6 +1045,52 @@ def adicionar_local_novo():
         database.session.rollback()
         flash("Erro ao processar novo local.", "danger")
         return redirect(origem)
+
+
+@app.route('/seguir_local/<int:local_id>', methods=['POST'])
+@login_required
+def seguir_local(local_id):
+    # Importamos as duas para garantir o registro completo
+    from feedin.models import Local, VinculoUsuarioLocal, AtividadeLocal
+    local = Local.query.get_or_404(local_id)
+
+    # 1. Verificamos a tabela que MANDA no botão (Passo 2 da sua perfil_local)
+    vinculo = VinculoUsuarioLocal.query.filter_by(
+        usuario_id=current_user.id,
+        local_id=local_id
+    ).first()
+
+    if vinculo:
+        # Se existe, removemos o vínculo do botão
+        database.session.delete(vinculo)
+
+        # Opcional: Remover também a AtividadeLocal se quiser limpar a linha do tempo
+        ativ = AtividadeLocal.query.filter_by(id_local=local_id, id_criador=current_user.id).first()
+        if ativ:
+            database.session.delete(ativ)
+
+        database.session.commit()
+        return jsonify({"status": "success", "message": "Parou de seguir"})
+
+    else:
+        # 1. Criamos o Vínculo que faz o botão mudar para "Seguindo"
+        novo_vinculo = VinculoUsuarioLocal(
+            usuario_id=current_user.id,
+            local_id=local_id
+        )
+        database.session.add(novo_vinculo)
+
+        # 2. Criamos a AtividadeLocal para aparecer na Linha do Tempo (Passo 5 da sua perfil_local)
+        nova_atividade = AtividadeLocal(
+            nome=f"Novo seguidor: {current_user.username}",
+            id_local=local.id,
+            id_criador=current_user.id,
+            descricao=f"Adicionou {local.nome} às suas memórias."
+        )
+        database.session.add(nova_atividade)
+
+        database.session.commit()
+        return jsonify({"status": "success", "message": "Seguindo"})
 
 
 @app.route('/get_perfil/<int:id_usuario>', methods=['GET', 'POST'])
@@ -3390,29 +3436,6 @@ def afinidade_entre_tags(tag_a_id, tag_b_id):
     ).count()
 
     return interseccao
-
-
-# Rotas ligadas ao Perfil Local
-
-@app.route('/local/reivindicar/<int:local_id>', methods=['POST'])
-@login_required
-def reivindicar_local(local_id):
-    # Verifica se já existe uma solicitação para este par Usuário/Local
-    existente = ReivindicacaoLocal.query.filter_by(id_local=local_id, id_usuario=current_user.id).first()
-
-    if not existente:
-        nova_solicitacao = ReivindicacaoLocal(id_local=local_id, id_usuario=current_user.id)
-        database.session.add(nova_solicitacao)
-        database.session.commit()
-
-        # Aqui entra o disparo de e-mail automático
-        # enviar_email_confirmacao_reivindicacao(current_user.email, local_id)
-
-        flash('Interesse registrado! Avisaremos você assim que a gestão oficial for liberada.', 'success')
-    else:
-        flash('Você já registrou interesse neste local.', 'info')
-
-    return redirect(url_for('perfil_local', id=local_id))
 
 
 @app.route('/local/avaliar/<int:local_id>', methods=['POST'])

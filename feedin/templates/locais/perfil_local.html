@@ -99,11 +99,18 @@
 
                 <div>
                     {% if not usuario_segue %}
-                        <button type="button" onclick="prepararSeguirDireto('{{ local.id }}', '{{ local.nome }}')" class="btn btn-light btn-lg rounded-pill px-4 shadow fw-bold text-primary">
+                        {# BOTÃO PARA SEGUIR (PREENCHIDO) #}
+                        <button type="button"
+                                onclick="prepararSeguirDireto('{{ local.id }}', '{{ local.nome }}')"
+                                class="btn btn-light btn-lg rounded-pill px-4 shadow fw-bold text-primary">
                             <i class="fas fa-plus me-2"></i>Seguir Local
                         </button>
                     {% else %}
-                        <button class="btn btn-outline-light btn-lg rounded-pill px-4 disabled opacity-75">
+                        {# BOTÃO "VAZADO" (SEGUINDO) #}
+                        {# Removi o 'disabled' para que o usuário possa clicar e DEIXAR de seguir (Toggle) #}
+                        <button type="button"
+                                onclick="prepararSeguirDireto('{{ local.id }}', '{{ local.nome }}')"
+                                class="btn btn-outline-light btn-lg rounded-pill px-4 fw-bold">
                             <i class="fas fa-check me-2"></i>Seguindo
                         </button>
                     {% endif %}
@@ -302,6 +309,27 @@ function enviarAvaliacaoCompleta() {
 
 function cancelarAvaliacao() {
     $('#feedback-container').fadeOut(() => { location.reload(); });
+}
+
+/**
+ * LÓGICA DE SEGUIR LOCAL
+ */
+function prepararSeguirDireto(localId, localNome) {
+    const $btn = $(event.currentTarget);
+
+    $.ajax({
+        url: "/seguir_local/" + localId,
+        method: 'POST',
+        data: { csrf_token: "{{ csrf_token() }}" },
+        success: function(response) {
+            if (response.status === "success") {
+                location.reload(); // Recarrega para atualizar o contador e o botão
+            }
+        },
+        error: function() {
+            alert("Erro ao processar vínculo com o local.");
+        }
+    });
 }
 </script>
 {% endblock %}
