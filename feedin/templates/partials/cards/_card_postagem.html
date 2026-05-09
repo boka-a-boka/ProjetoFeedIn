@@ -123,16 +123,11 @@
 
         {# CORPO DO TEXTO (Lógica festiva interna de posts manuais) #}
 <div class="p-4 pt-2" style="display: block; overflow: hidden;">
-{# IMAGEM DA POSTAGEM - AGORA RESPEITANDO FORMATOS #}
-    {% if imagem %}
-        <a href="{{ url_for('ver_perfil', usuario_id=autor.id) }}#post-{{ id_post }}" class="d-block px-3">
-            <div class="container-memoria shadow-sm">
-                <img src="{{ url_for('static', filename='uploads/posts/' ~ imagem) }}"
-                     class="img-respeitosa"
-                     alt="Memória Viva">
-            </div>
+    {% if imagem -%}
+        <a href="{{ url_for('ver_perfil', usuario_id=autor.id) }}#post-{{ id_post }}">
+            <img src="{{ url_for('static', filename='uploads/posts/' ~ imagem) }}" class="img-wrap-text">
         </a>
-    {% endif %}
+    {%- endif -%}
 
     {# O segredo aqui é o .strip() e garantir que não haja NADA entre a imagem e o texto no código #}
     <p class="text-dark mb-0 texto-postagem" style="white-space: pre-line; font-size: 1.1rem; line-height: 1.4; font-weight: 500; margin: 0; padding: 0;">{{- texto.strip() | safe -}}</p>
