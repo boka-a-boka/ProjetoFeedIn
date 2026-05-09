@@ -185,21 +185,22 @@
  * 1. FUNÇÕES DE ESTADO (Ações de UI)
  */
 
-// Abre o formulário para EDITAR uma memória existente
+// Abre o formulário para EDITAR uma memória que o usuário já registrou
 function executarEdicao(dados) {
     const form = document.getElementById('formGrupoSocial');
     const btnSubmit = document.getElementById('btnSubmitPrincipal');
 
-    // Exibir as seções
+    // Exibir todas as seções para edição
     document.getElementById('camposEnderecoExtra').classList.remove('d-none');
     document.getElementById('secao-curtidas').classList.remove('d-none');
 
-    // Preenchimento
+    // Preenchimento dos campos principais
     document.getElementById('inputNomeLocal').value = dados.nome || "";
-    document.getElementById('hiddenLocalId').value = dados.id || "";
+    document.getElementById('hiddenLocalId').value = dados.id || ""; // ID do vínculo ou do local
     document.getElementById('inputCidade').value = (dados.cidade && dados.cidade !== "undefined") ? dados.cidade : "Piracicaba";
     document.getElementById('selectStatusAtivo').value = dados.ativo || "1";
 
+    // Função auxiliar para campos via 'name'
     const setField = (name, val) => {
         const el = document.getElementsByName(name)[0];
         if (el) el.value = (val && val !== "undefined") ? val : "";
@@ -210,7 +211,7 @@ function executarEdicao(dados) {
     setField('periodo_referencia', dados.periodo);
     setField('experiencia_usuario', dados.descricao);
 
-    // Altera a rota para EDITAR
+    // Altera a rota para EDITAR (usando o ID do vínculo/registro)
     form.action = "/editar_memoria/" + dados.id;
 
     if (btnSubmit) {
@@ -221,20 +222,21 @@ function executarEdicao(dados) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-// Abre o formulário para CADASTRAR um novo local
+// Abre o formulário para CADASTRAR um local que não existe no banco
 function abrirCamposNovoLocal(nomeDigitado) {
     const listaSugestoes = document.getElementById('listaSugestoes');
     const btnSubmit = document.getElementById('btnSubmitPrincipal');
 
     document.getElementById('inputNomeLocal').value = nomeDigitado;
-    document.getElementById('hiddenLocalId').value = ""; // Importante: ID vazio = Novo
+    document.getElementById('hiddenLocalId').value = ""; // Vazio indica NOVO local no banco
 
     if(listaSugestoes) listaSugestoes.classList.add('d-none');
 
+    // Mostra campos de endereço para o usuário cadastrar o local novo
     document.getElementById('camposEnderecoExtra').classList.remove('d-none');
     document.getElementById('secao-curtidas').classList.remove('d-none');
 
-    // Altera a rota para SALVAR (Novo)
+    // Rota de salvar novo registro
     document.getElementById('formGrupoSocial').action = "{{ url_for('salvar_grupo_social') }}";
 
     if (btnSubmit) {
@@ -243,23 +245,21 @@ function abrirCamposNovoLocal(nomeDigitado) {
     }
 }
 
-
 /**
  * 2. ESCUTA DE EVENTOS (DOM)
  */
 document.addEventListener('DOMContentLoaded', function() {
     const inputNome = document.getElementById('inputNomeLocal');
     const listaSugestoes = document.getElementById('listaSugestoes');
+    const hiddenLocalId = document.getElementById('hiddenLocalId');
 
-    // Evento de Edição (Clique nos botões da lista)
+    // Delegar clique para botões de edição da lista "Meus Lugares"
     document.addEventListener('click', function(e) {
         const btn = e.target.closest('.btn-editar-memoria');
-        if (btn) {
-            executarEdicao(btn.dataset);
-        }
+        if (btn) executarEdicao(btn.dataset);
     });
 
-    // Evento de Autocomplete
+    // Autocomplete Inteligente
     if (inputNome) {
         inputNome.addEventListener('input', function() {
             const busca = this.value;
@@ -269,11 +269,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
 
-            fetch(`/buscar_locais_onboarding?q=${encodeURIComponent(busca)}`)
-                .then(res => {
-                    if (!res.ok) throw new Error('Erro na busca global');
-                    return res.json();
-                })
+            // Rota ajustada para /buscar_locais conforme seu app.py
+            fetch(`/buscar_locais?q=${encodeURIComponent(busca)}`)
+                .then(res => res.json())
                 .then(data => {
                     if(!listaSugestoes) return;
                     listaSugestoes.innerHTML = '';
@@ -283,12 +281,19 @@ document.addEventListener('DOMContentLoaded', function() {
                         data.forEach(local => {
                             const item = document.createElement('button');
                             item.type = 'button';
-                            item.className = 'list-group-item list-group-item-action border-0';
-                            item.innerHTML = `<strong>${local.nome}</strong><br><small>${local.bairro}</small>`;
+                            item.className = 'list-group-item list-group-item-action border-0 py-3';
+                            item.innerHTML = `
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span><strong>${local.nome}</strong><br><small class="text-muted">${local.bairro || ''}</small></span>
+                                    <i class="bi bi-arrow-right-short text-primary"></i>
+                                </div>`;
+
                             item.onclick = () => {
                                 inputNome.value = local.nome;
-                                document.getElementById('hiddenLocalId').value = local.id;
+                                hiddenLocalId.value = local.id; // Vincula ao ID existente
                                 listaSugestoes.classList.add('d-none');
+
+                                // Se o local já existe, só precisamos da Época e Relato
                                 document.getElementById('secao-curtidas').classList.remove('d-none');
                                 document.getElementById('camposEnderecoExtra').classList.add('d-none');
                                 document.getElementById('formGrupoSocial').action = "{{ url_for('salvar_grupo_social') }}";
@@ -296,25 +301,32 @@ document.addEventListener('DOMContentLoaded', function() {
                             listaSugestoes.appendChild(item);
                         });
 
-                        // Opção final na lista para forçar novo cadastro
+                        // Botão para caso o local na lista não seja exatamente o que ele quer
                         const opNovo = document.createElement('button');
                         opNovo.type = 'button';
-                        opNovo.className = 'list-group-item list-group-item-action border-0 bg-primary-subtle fw-bold text-primary';
-                        opNovo.innerHTML = `<i class="bi bi-plus-circle-fill me-2"></i>Não encontrei, cadastrar "${busca}"`;
+                        opNovo.className = 'list-group-item list-group-item-action border-0 bg-light fw-bold text-primary py-3';
+                        opNovo.innerHTML = `<i class="bi bi-plus-circle me-2"></i>Não é nenhum desses, cadastrar "${busca}"`;
                         opNovo.onclick = () => abrirCamposNovoLocal(busca);
                         listaSugestoes.appendChild(opNovo);
-
                     } else {
-                        // Se nada for encontrado, sugere o cadastro direto
+                        // Lista Vazia: Sugere novo cadastro
                         const itemVazio = document.createElement('button');
                         itemVazio.type = 'button';
-                        itemVazio.className = 'list-group-item list-group-item-action border-0 fw-bold';
-                        itemVazio.innerHTML = `<i class="bi bi-geo-alt me-2 text-primary"></i>"${busca}" não encontrado. Cadastrar?`;
+                        itemVazio.className = 'list-group-item list-group-item-action border-0 py-3 fw-bold';
+                        itemVazio.innerHTML = `<i class="bi bi-geo-alt me-2 text-primary"></i>"${busca}" não encontrado. Cadastrar como novo?`;
                         itemVazio.onclick = () => abrirCamposNovoLocal(busca);
                         listaSugestoes.appendChild(itemVazio);
                     }
-                });
+                })
+                .catch(err => console.error("Erro no autocomplete:", err));
         });
     }
+
+    // Fecha a lista de sugestões se clicar fora
+    document.addEventListener('click', function(e) {
+        if (listaSugestoes && !listaSugestoes.contains(e.target) && e.target !== inputNome) {
+            listaSugestoes.classList.add('d-none');
+        }
+    });
 });
 </script>

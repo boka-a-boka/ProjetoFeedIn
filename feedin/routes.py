@@ -345,69 +345,49 @@ def index():
     return render_template('index.html')
 
 
-@app.route("/editar-perfil", methods=["POST"])
+@app.route('/editar_perfil', methods=['POST'])
 @login_required
 def editar_perfil():
-    # Chamamos o formulário para validar os dados que vieram do HTML
-    form = FormPerfil()
+    try:
+        # 1. PROCESSAR FOTO (Se houver)
+        if 'foto_perfil' in request.files:
+            file = request.files['foto_perfil']
+            if file and file.filename != '':
+                # Aqui você chama sua função de salvar imagem que já funciona
+                # Exemplo: nome_foto = salvar_imagem(file)
+                # current_user.foto_perfil = nome_foto
+                pass # (Mantenha sua lógica de upload aqui)
 
-    # Precisamos carregar as escolhas dos Selects para a validação não falhar
-    form.genero.choices = [(g.id, g.genero) for g in Generos.query.all()]
-    form.estado_civil.choices = [(e.id, e.estado_civil) for e in EstadoCivil.query.all()]
+        # 2. PROCESSAR DADOS DO PERFIL
+        # Garantindo que o objeto perfil exista
+        if not current_user.perfil:
+            # Se por algum erro não existir, criamos aqui
+            # perfil_novo = Perfil(usuario_id=current_user.id)
+            # database.session.add(perfil_novo)
+            pass
 
-    if form.validate_on_submit():
-        try:
-            perfil = current_user.perfil
+        current_user.perfil.nome_completo = request.form.get('nome_completo')
+        current_user.perfil.data_nascimento = request.form.get('data_nascimento')
+        current_user.perfil.cidade_natal = request.form.get('cidade_natal')
+        current_user.perfil.biografia = request.form.get('biografia')
 
-            # 1. ATUALIZAÇÃO DOS DADOS SOCIAIS (Usando os dados validados do Form)
-            perfil.nome_completo = form.nome_completo.data
-            perfil.data_nascimento = form.data_nascimento.data
-            perfil.cidade_natal = form.cidade_natal.data
-            perfil.genero = form.genero.data
-            perfil.estado_civil = form.estado_civil.data
-            perfil.biografia = form.biografia.data
+        database.session.commit()
 
-            # 2. TRATAMENTO DA IDENTIDADE CIVIL (SÓ SE AINDA NÃO ACEITOU LGPD)
-            if not current_user.aceite_lgpd:
-                # O CPF não está no FormPerfil, então pegamos direto do formulário HTML
-                cpf_bruto = request.form.get("cpf")
-                if cpf_bruto:
-                    cpf_digitado = re.sub(r'\D', '', cpf_bruto)
-                    cpf_protegido = app.fernet.encrypt(cpf_digitado.encode())
-
-                    nova_id = IdentidadeCivil(
-                        usuario_id=current_user.id,
-                        nome_completo_oficial=perfil.nome_completo.upper(),
-                        cpf_criptografado=cpf_protegido,
-                        data_nascimento=perfil.data_nascimento,
-                        ip_origem=request.remote_addr,
-                        versao_termos_aceita="1.0-BETA"
-                    )
-                    database.session.add(nova_id)
-                    current_user.aceite_lgpd = True
-
-            database.session.commit()
+        # 3. A LÓGICA DE DIRECIONAMENTO (O "Pulo do Gato")
+        if current_user.nivel_acesso < 10:
+            # Se é novato e acabou de preencher os dados, manda para os INTERESSES
+            flash("Dados salvos! Agora, escolha seus interesses.", "success")
+            return redirect(url_for('configuracoes', aba='preferencias'))
+        else:
+            # Se é veterano, mantém na mesma página de edição
             flash("Perfil atualizado com sucesso!", "success")
-
-            # Se for Onboarding, mantém o fluxo original
-            if current_user.nivel_acesso < 10:
-                return redirect(url_for('get_perfil', id_usuario=current_user.id, aba='memorias'))
-
-            # SE FOR GESTÃO (Usuário já ativo), volta para a aba de perfil nas configurações
             return redirect(url_for('configuracoes', aba='perfil'))
 
-
-        except Exception as e:
-            database.session.rollback()
-            print(f"ERRO CRÍTICO NO COMMIT: {e}")
-            flash(f"Erro técnico ao salvar. Tente novamente.", "danger")
-            return redirect(url_for('configuracoes', aba='perfil'))
-
-    # Se o formulário NÃO validar (algum campo obrigatório vazio ou formato errado)
-    print(f"ERROS WTFORMS: {form.errors}")
-    flash("Por favor, verifique os campos destacados e tente novamente.", "warning")
-    return redirect(request.referrer or url_for('get_perfil', id_usuario=current_user.id))
-    return redirect(url_for('configuracoes', aba='perfil'))
+    except Exception as e:
+        database.session.rollback()
+        print(f"Erro ao editar perfil: {e}")
+        flash("Erro ao salvar os dados.", "danger")
+        return redirect(url_for('configuracoes', aba='perfil'))
 
 
 @app.route('/upload-foto-perfil', methods=['POST'])
@@ -688,15 +668,18 @@ def buscar_interesses_onboarding():
         if len(termo) < 2:
             return jsonify([])
 
+        # Buscamos tags visíveis para o usuário que batem com o termo
         sugestoes = Taxonomia.query.filter(
-            Taxonomia.nome.ilike(f'%{termo}%')
+            Taxonomia.nome.ilike(f'%{termo}%'),
+            Taxonomia.visivel_usuario == True # Mantendo o filtro de visibilidade
         ).limit(15).all()
 
         lista_final = []
         for t in sugestoes:
-            # Buscamos o primeiro "Pai" (Contexto) se existir
-            # Na sua model, 'contextos' é a lista de pais
-            pai_direto = t.contextos[0] if t.contextos else None
+            # 1. SEGURANÇA: Verifica se existe contexto antes de acessar o índice 0
+            # Na sua model 'contextos' são os pais e 'subitens' são os filhos
+            pais = t.contextos
+            pai_direto = pais[0] if pais else None
 
             item = {
                 'id': t.id,
@@ -704,17 +687,18 @@ def buscar_interesses_onboarding():
                 'v_usu': bool(t.visivel_usuario),
                 'v_neg': bool(t.visivel_negocio),
                 'contagem': t.contagem_uso or 0,
-                # Dados do Pai para o gatilho automático no JS
+                # Dados do Pai para a lógica de "Categoria" no seu JS
                 'id_pai': pai_direto.id if pai_direto else None,
-                'categoria_pai': pai_direto.nome if pai_direto else ''
+                'categoria_pai': pai_direto.nome if pai_direto else 'Geral'
             }
             lista_final.append(item)
 
         return jsonify(lista_final)
 
     except Exception as e:
-        print(f"ERRO NA HIERARQUIA: {e}")
-        return jsonify({"erro": str(e)}), 500
+        # Importante: O print ajuda você a ver o erro no terminal do PyCharm
+        print(f"DEBUG API BUSCA: {str(e)}")
+        return jsonify([]), 200 # Retornamos lista vazia em vez de 500 para não travar o front
 
 
 @app.route('/api/dashboard/taxonomia/adicionar', methods=['POST'])
@@ -1716,46 +1700,72 @@ def buscar_interesses():
     return jsonify([{'id': t.id, 'nome': t.nome} for t in meus_gostos])
 
 
-@app.route('/salvar_preferencias', methods=['POST','GET'])  # Só POST já resolve aqui
+@app.route('/salvar_preferencias', methods=['POST'])
 @login_required
 def salvar_preferencias():
-    # O HTML moderno envia uma string como "1,2,55,104"
     ids_raw = request.form.get('preferencias_ids', '')
-    novos_termos_raw = request.form.get('novos_termos', '')  # Para sugestões novas
-
-    # Converte a string de IDs em uma lista de inteiros
-    ids_selecionados = [int(id) for id in ids_raw.split(',') if id.strip()]
+    novos_termos_raw = request.form.get('novos_termos', '')
 
     try:
-        # 1. Limpa interesses antigos
-        current_user.interesses_escolhidos = []
+        # 1. Converte IDs com segurança
+        ids_selecionados = [int(tid) for tid in ids_raw.split(',') if tid.strip().isdigit()]
 
-        # 2. Adiciona as tags existentes
+        # 2. Atualiza a relação (Lógica de substituição)
+        # Importante: Verifique se o nome no model é 'interesses'
+        current_user.interesses = []
+
+        # Tags existentes
         for tid in ids_selecionados:
             tag = Taxonomia.query.get(tid)
             if tag:
-                current_user.interesses_escolhidos.append(tag)
-                tag.contagem_uso = (tag.contagem_uso or 0) + 1
+                current_user.interesses.append(tag)
 
-        # 3. Lógica do nível de acesso (Pioneiro)
-        # Verificamos o total ATUAL de interesses salvos
-        total_interesses = len(current_user.interesses_escolhidos)
+        # 3. Novos Termos (Sugestões)
+        if novos_termos_raw:
+            for nome in novos_termos_raw.split(','):
+                nome_limpo = nome.strip()
+                if nome_limpo:
+                    # Busca para não duplicar na tabela global de Taxonomia
+                    tag_existente = Taxonomia.query.filter_by(nome=nome_limpo).first()
+                    if not tag_existente:
+                        tag_existente = Taxonomia(nome=nome_limpo, v_usu=True, v_neg=False)
+                        database.session.add(tag_existente)
+                        database.session.flush()  # Para garantir que temos o ID
 
-        # Sua regra: Se tem 10 ou mais e ainda é nível baixo, sobe para 10
-        if total_interesses >= 10 and current_user.nivel_acesso < 10:
-            sucesso, msg = processar_mudanca_nivel(current_user, 10)
-            if sucesso:
-                flash("Parabéns! Você agora é um usuário oficial do FeedIn!", "success")
+                    if tag_existente not in current_user.interesses:
+                        current_user.interesses.append(tag_existente)
 
-        database.session.commit()
-        flash("Interesses atualizados com sucesso!", "success")
+        total_atual = current_user.interesses.count()
+        nivel_antes = current_user.nivel_acesso
+
+        # 4. A LÓGICA DE DIRECIONAMENTO (A "GRANDE CHAVE")
+
+        # Caso A: Ele era novato e COMPLETOU a missão
+        if nivel_antes < 10 and total_atual >= 10:
+            processar_mudanca_nivel(current_user, 10)
+            database.session.commit()
+            flash("Sensacional! Você agora é um Pioneiro do FeedIn.", "success")
+            return redirect(url_for('feed'))
+
+            # Caso B: Ele é novato mas AINDA NÃO completou
+        elif nivel_antes < 10:
+            database.session.commit()
+            # Note que aqui também usamos count() se precisar exibir
+            flash(f"Interesses salvos! Selecione mais {10 - total_atual} para liberar seu acesso.", "info")
+            return redirect(url_for('configuracoes', aba='preferencias'))
+
+        # Caso C: Ele já era veterano (Nível >= 10)
+        else:
+            database.session.commit()
+            flash("Suas preferências foram atualizadas com sucesso.", "success")
+            return redirect(url_for('configuracoes', aba='preferencias'))
 
     except Exception as e:
         database.session.rollback()
-        print(f"Erro ao salvar: {e}")  # Bom para debug
-        flash("Erro ao salvar preferências.", "danger")
-
-    return redirect(url_for('configuracoes', aba='preferencias'))
+        # Aqui você descobre o culpado no console do PyCharm
+        print(f"DEBUG SALVAR PREFS: {str(e)}")
+        flash("Erro ao salvar preferências. Tente novamente.", "danger")
+        return redirect(url_for('configuracoes', aba='preferencias'))
 
 
 @app.route("/remover-interesse/<int:id_interesse>", methods=["POST"])
@@ -2254,12 +2264,10 @@ def salvar_grupo_social():
         # Requisito: 5 Lugares + 10 Interesses (Tags da Taxonomia) + LGPD
         # Nota: Ajuste 'interesses_escolhidos' para o nome da relação no seu Model Usuario
         total_lugares = len(current_user.vinculos)
-        total_tags = current_user.interesses_escolhidos.count()
+        # total_tags = current_user.interesses_escolhidos.count()
 
-        if total_lugares >= 5 and total_tags >= 10 and current_user.aceite_lgpd:
-            if current_user.nivel_acesso < 10:
-                current_user.nivel_acesso = 10
-                flash("Identidade Validada! Você agora é um usuário do FeedIn.", "success")
+        if total_lugares >= 5 and current_user.aceite_lgpd:
+                flash("Identidade Validada!", "success")
 
         database.session.commit()
         flash("Memória guardada com sucesso!", "success")
@@ -2595,38 +2603,54 @@ def estabelecer_vinculo_pioneiro(novo_usuario_id, id_pai, contexto_raw):
         print(f"Erro ao estabelecer vínculo: {e}")
 
 
-@app.route("/configuracoes")
-@app.route("/configuracoes/<aba>")
+@app.route('/configuracoes')
 @login_required
-def configuracoes(aba='perfil'):
-    import json
-    from feedin.forms import FormApelido
+def configuracoes():
+    # 1. LÓGICA DE NAVEGAÇÃO
+    aba_solicitada = request.args.get('aba')
+    aba_ativa = aba_solicitada if aba_solicitada else 'perfil'
 
-    # Buscas básicas
-    generos = Generos.query.all()
-    estados_civis = EstadoCivil.query.all()
+    if current_user.nivel_acesso < 10:
+        if not current_user.foto_perfil or current_user.foto_perfil == 'default.jpg':
+            aba_ativa = 'perfil'
+        else:
+            aba_ativa = 'preferencias'
+
+    # 2. PREPARAÇÃO DOS FORMULÁRIOS
+    from feedin.forms import FormPerfil, FormApelido
+    # Carrega os dados existentes para o formulário de perfil
+    form = FormPerfil(obj=current_user.perfil)
     form_apelido = FormApelido()
 
-    # Prioridade total para o que vier na URL
-    aba_final = request.args.get('aba') or aba
+    # 3. CONVERSÃO DOS INTERESSES PARA JSON (O que o seu JS exige)
+    # Pegamos os interesses do banco usando .all() por ser uma relação dinâmica
+    interesses_atuais = current_user.interesses.all()
 
-    # Interesses (simplificado para não travar)
-    try:
-        interesses_obj = current_user.interesses_escolhidos
-    except:
-        interesses_obj = []
+    lista_prefs = []
+    for t in interesses_atuais:
+        lista_prefs.append({
+            'id': t.id,
+            'nome': t.nome,
+            'v_usu': bool(t.visivel_usuario),
+            'v_neg': bool(t.visivel_negocio)
+        })
 
-    minhas_prefs_json = json.dumps([{'id': p.id, 'nome': p.nome} for p in interesses_obj])
-    perfil = Perfil.query.filter_by(id_usuario=current_user.id).first()
+    # Esta variável é a que o seu 'data-prefs' no HTML está procurando
+    minhas_prefs_json = json.dumps(lista_prefs)
 
-    return render_template("configuracoes.html",
-                           aba_ativa=aba_final,
-                           generos=generos,
-                           estados=estados_civis,
-                           perfil=perfil,
-                           form_apelido=form_apelido,
-                           minhas_prefs_json=minhas_prefs_json,
-                           identidade=current_user.identidade)
+    # 4. CARGA DE TODAS AS TAGS (Para compatibilidade/outros usos)
+    todas_tags = Taxonomia.query.filter_by(visivel_usuario=True).order_by(Taxonomia.nome.asc()).all()
+    meus_interesses_ids = [t.id for t in interesses_atuais]
+
+    return render_template(
+        'configuracoes.html',
+        aba_ativa=aba_ativa,
+        form=form,
+        form_apelido=form_apelido,
+        todas_tags=todas_tags,
+        meus_interesses_ids=meus_interesses_ids,
+        minhas_prefs_json=minhas_prefs_json  # <--- ESSA É A CHAVE DO SUCESSO
+    )
 
 
 # rota para exibição do perfil

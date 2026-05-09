@@ -31,37 +31,44 @@
             </div>
 
             <!-- OS 4 BOTÕES DE NAVEGAÇÃO DIRETA -->
-            <div class="row g-2 mb-4">
-                <div class="col-6 col-md-3">
-                    <a href="{{ url_for('configuracoes', aba='perfil') }}"
-                       class="btn {% if aba_ativa == 'perfil' %}btn-secondary{% else %}btn-outline-secondary{% endif %} w-100 py-3 rounded-4 shadow-sm">
-                        <i class="bi bi-person-circle d-block fs-4 mb-1"></i>
-                        <small class="fw-bold">Dados</small>
-                    </a>
+            {% if current_user.nivel_acesso >= 10 %}
+                <div class="row g-2 mb-4">
+                    <div class="col-6 col-md-3">
+                        <a href="{{ url_for('configuracoes', aba='perfil') }}"
+                           class="btn {% if aba_ativa == 'perfil' %}btn-secondary{% else %}btn-outline-secondary{% endif %} w-100 py-3 rounded-4 shadow-sm">
+                            <i class="bi bi-person-circle d-block fs-4 mb-1"></i>
+                            <small class="fw-bold">Dados</small>
+                        </a>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <a href="{{ url_for('configuracoes', aba='preferencias') }}"
+                           class="btn {% if aba_ativa == 'preferencias' %}btn-primary{% else %}btn-outline-primary{% endif %} w-100 py-3 rounded-4 shadow-sm">
+                            <i class="bi bi-heart-fill d-block fs-4 mb-1"></i>
+                            <small class="fw-bold">Interesses</small>
+                        </a>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <a href="{{ url_for('configuracoes', aba='identidade') }}"
+                           class="btn {% if aba_ativa == 'identidade' %}btn-info text-white{% else %}btn-outline-info{% endif %} w-100 py-3 rounded-4 shadow-sm">
+                            <i class="bi bi-shield-lock-fill d-block fs-4 mb-1"></i>
+                            <small class="fw-bold">Cofre</small>
+                        </a>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <a href="{{ url_for('configuracoes', aba='seguranca') }}"
+                           class="btn {% if aba_ativa == 'seguranca' %}btn-danger{% else %}btn-outline-danger{% endif %} w-100 py-3 rounded-4 shadow-sm">
+                            <i class="bi bi-key-fill d-block fs-4 mb-1"></i>
+                            <small class="fw-bold">Senha</small>
+                        </a>
+                    </div>
                 </div>
-                <div class="col-6 col-md-3">
-                    <a href="{{ url_for('configuracoes', aba='preferencias') }}"
-                       class="btn {% if aba_ativa == 'preferencias' %}btn-primary{% else %}btn-outline-primary{% endif %} w-100 py-3 rounded-4 shadow-sm">
-                        <i class="bi bi-heart-fill d-block fs-4 mb-1"></i>
-                        <small class="fw-bold">Interesses</small>
-                    </a>
+            {% else %}
+                <!-- MENSAGEM DE BOAS-VINDAS PARA O NOVATO -->
+                <div class="text-center mb-4">
+                    <h4 class="fw-bold text-primary">Quase lá!</h4>
+                    <p class="text-muted">Complete seus interesses para liberar seu perfil.</p>
                 </div>
-                <div class="col-6 col-md-3">
-                    <a href="{{ url_for('configuracoes', aba='identidade') }}"
-                       class="btn {% if aba_ativa == 'identidade' %}btn-info text-white{% else %}btn-outline-info{% endif %} w-100 py-3 rounded-4 shadow-sm">
-                        <i class="bi bi-shield-lock-fill d-block fs-4 mb-1"></i>
-                        <small class="fw-bold">Cofre</small>
-                    </a>
-                </div>
-                <div class="col-6 col-md-3">
-                    <a href="{{ url_for('configuracoes', aba='seguranca') }}"
-                       class="btn {% if aba_ativa == 'seguranca' %}btn-danger{% else %}btn-outline-danger{% endif %} w-100 py-3 rounded-4 shadow-sm">
-                        <i class="bi bi-key-fill d-block fs-4 mb-1"></i>
-                        <small class="fw-bold">Senha</small>
-                    </a>
-                </div>
-            </div>
-
+            {% endif %}
             <!-- Linha Inferior dos Botões -->
             <hr style="border: 0; border-top: 1px solid #dee2e6; opacity: 0.6;" class="mb-5">
 
