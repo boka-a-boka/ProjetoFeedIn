@@ -409,3 +409,54 @@ h1 {
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
 
+/* CSS GLOBAL PARA FOTOS DE LISTA - Cole na base.html ou seu .css principal */
+
+.foto-pioneiro-quadrada {
+    width: 80px !important;
+    height: 80px !important;
+    object-fit: cover; /* Garante que a foto não estique */
+    border-radius: 12px; /* Mantém o padrão visual do FeedIn */
+    flex-shrink: 0; /* Impede que o flexbox "esmague" a foto */
+    background-color: #eee; /* Fundo neutro caso a imagem demore a carregar */
+}
+
+/* Garante que a coluna da foto não varie de tamanho */
+.col-foto-lista {
+    width: 80px;
+    flex: 0 0 80px;
+}
+
+/* Ajuste fino para telas pequenas */
+@media (max-width: 576px) {
+    .foto-pioneiro-quadrada {
+        width: 65px !important;
+        height: 65px !important;
+    }
+    .col-foto-lista {
+        width: 65px;
+        flex: 0 0 65px;
+    }
+}
+
+/* Botão de conexão no tema pioneiro */
+.pioneiro-theme .btn-primary {
+    background: linear-gradient(135deg, var(--pioneiro-gold) 0%, var(--pioneiro-gold-dark) 100%);
+    border: none;
+    color: var(--pioneiro-dark);
+}
+
+.btn-voltar-feedin {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    z-index: 100;
+    background: white;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--pioneiro-dark);
+    text-decoration: none;
+}

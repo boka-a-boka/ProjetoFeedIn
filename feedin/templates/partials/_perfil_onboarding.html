@@ -29,21 +29,42 @@
     <div class="card border-0 shadow-lg rounded-4 p-4 mb-4 animate__animated animate__fadeIn">
         <h3 class="fw-bold mb-4"><i class="bi bi-person-badge me-2 text-primary"></i>Sua Identidade</h3>
 
-        <form id="form-perfil-dados" method="POST" action="{{ url_for('editar_perfil') }}">
+        <form id="form-perfil-dados" method="POST" action="{{ url_for('editar_perfil') }}" enctype="multipart/form-data">
             {{ form.csrf_token }}
-            <div class="row g-3">
-                <div class="col-md-12 p-2 border-bottom">
-                    {{ form.nome_completo.label(class="fw-bold mb-1") }}
-                    {{ form.nome_completo(class="form-control border-0 bg-light", placeholder="Seu nome completo") }}
+                <div class="row-striped p-3 d-md-flex align-items-center">
+                    {{ form.nome_completo.label(class="col-md-3 fw-bold mb-0") }}
+                    <div class="col-md-9">{{ form.nome_completo(class="form-control border-0") }}</div>
                 </div>
 
-                <div class="col-md-6 p-2 border-bottom">
-                    {{ form.cidade_natal.label(class="fw-bold mb-1") }}
-                    {{ form.cidade_natal(class="form-control border-0 bg-light") }}
+                <div class="row-striped p-3 d-md-flex align-items-center">
+                    {{ form.data_nascimento.label(class="col-md-3 fw-bold mb-0") }}
+                    <div class="col-md-4">{{ form.data_nascimento(class="form-control border-0", type="date") }}</div>
                 </div>
 
-                {# Adicione aqui os outros campos se necessário (nascimento, bio, etc) #}
-            </div>
+                <div class="row-striped p-3 d-md-flex align-items-center">
+                    {{ form.genero.label(class="col-md-3 fw-bold mb-0") }}
+                    <div class="col-md-4">{{ form.genero(class="form-select border-0") }}</div>
+                </div>
+
+                <div class="row-striped p-3 d-md-flex align-items-center">
+                    {{ form.estado_civil.label(class="col-md-3 fw-bold mb-0") }}
+                    <div class="col-md-4">{{ form.estado_civil(class="form-select border-0") }}</div>
+                </div>
+
+                <div class="row-striped p-3 d-md-flex align-items-center">
+                    {{ form.cidade_natal.label(class="col-md-3 fw-bold mb-0") }}
+                    <div class="col-md-6">{{ form.cidade_natal(class="form-control border-0") }}</div>
+                </div>
+
+                <div class="row-striped p-3 d-md-flex align-items-start border-bottom">
+                    <label class="col-md-3 fw-bold mb-0 mt-2">Sua História (Bio)</label>
+                    <div class="col-md-9">
+                        {{ form.biografia(class="form-control border-0", rows="7", id="bio-field", placeholder="Conte sua trajetória...") }}
+                        <div class="text-end mt-1">
+                            <small id="bio-counter" class="text-muted" style="font-size: 0.75rem;">0 / 500</small>
+                        </div>
+                    </div>
+                </div>
 
             <button type="submit" class="btn btn-primary w-100 py-3 fw-bold rounded-pill shadow mt-4">
                 Salvar Identidade e Continuar <i class="bi bi-save ms-2"></i>

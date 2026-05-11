@@ -17,7 +17,7 @@ from feedin.utils import salvar_imagem, processar_mudanca_nivel, obter_signo, va
 from werkzeug.utils import secure_filename
 from urllib.parse import quote
 from functools import wraps
-from sqlalchemy import or_, func, asc, and_
+from sqlalchemy import or_, func, asc, and_, not_
 from sqlalchemy.orm import joinedload
 from cryptography.fernet import Fernet  # Para criptografia reversível
 from PIL import Image
@@ -362,47 +362,61 @@ def index():
 @app.route('/editar_perfil', methods=['POST'])
 @login_required
 def editar_perfil():
-    try:
-        # 1. PROCESSAR FOTO (Se houver)
-        if 'foto_perfil' in request.files:
-            file = request.files['foto_perfil']
-            if file and file.filename != '':
-                # Aqui você chama sua função de salvar imagem que já funciona
-                # Exemplo: nome_foto = salvar_imagem(file)
-                # current_user.foto_perfil = nome_foto
-                pass # (Mantenha sua lógica de upload aqui)
+    form = FormPerfil()
 
-        # 2. PROCESSAR DADOS DO PERFIL
-        # Garantindo que o objeto perfil exista
-        if not current_user.perfil:
-            # Se por algum erro não existir, criamos aqui
-            # perfil_novo = Perfil(usuario_id=current_user.id)
-            # database.session.add(perfil_novo)
-            pass
+    # Carregar choices
+    form.genero.choices = [(g.id, str(g.id)) for g in Generos.query.all()]
+    form.estado_civil.choices = [(e.id, str(e.id)) for e in EstadoCivil.query.all()]
 
-        current_user.perfil.nome_completo = request.form.get('nome_completo')
-        current_user.perfil.data_nascimento = request.form.get('data_nascimento')
-        current_user.perfil.cidade_natal = request.form.get('cidade_natal')
-        current_user.perfil.biografia = request.form.get('biografia')
+    if request.method == 'POST':
+        try:
+            nome = request.form.get('nome_completo')
 
-        database.session.commit()
+            # 1. BUSCAR OU CRIAR O PERFIL (Usando variável local 'perfil_obj')
+            from feedin.models import Perfil
+            perfil_obj = Perfil.query.filter_by(id_usuario=current_user.id).first()
 
-        # 3. A NOVA LÓGICA DE DIRECIONAMENTO
-        if current_user.nivel_acesso < 10:
-            # Mantém para novatos preencherem preferências
-            flash("Dados salvos! Agora, escolha seus interesses.", "success")
-            return redirect(url_for('configuracoes', aba='preferencias'))
-        else:
-            # PARA VETERANOS: Quebra o loop enviando para o perfil público
-            flash("Perfil atualizado com sucesso!", "success")
-            # Aqui forçamos a volta para a página que todo mundo vê
+            if not perfil_obj:
+                print("Criando novo objeto de perfil...")
+                perfil_obj = Perfil(id_usuario=current_user.id, nome_completo=nome)
+                database.session.add(perfil_obj)
+            else:
+                print("Atualizando perfil existente...")
+                perfil_obj.nome_completo = nome
+
+            # 2. CAPTURAR OS VALORES DO FORM
+            id_gen = request.form.get('genero')
+            id_civ = request.form.get('estado_civil')
+
+            # 3. ATRIBUIR DIRETAMENTE AO OBJETO LOCAL
+            perfil_obj.data_nascimento = form.data_nascimento.data
+            perfil_obj.cidade_natal = request.form.get('cidade_natal')
+            perfil_obj.biografia = request.form.get('biografia')
+
+            if id_gen and id_gen.isdigit():
+                perfil_obj.genero = int(id_gen)  # Use o nome da coluna do banco aqui
+
+            if id_civ and id_civ.isdigit():
+                perfil_obj.estado_civil = int(id_civ)  # Use o nome da coluna do banco aqui
+
+            # 4. COMMIT
+            database.session.commit()
+            print("Sucesso: Perfil gravado no banco!")
+
+            # 5. DIRECIONAMENTO
+            if current_user.nivel_acesso < 10:
+                flash("Identidade salva com sucesso!", "success")
+                return redirect(url_for('dashboard', aba='preferencias'))
+
             return redirect(url_for('ver_perfil', usuario_id=current_user.id))
 
-    except Exception as e:
-        database.session.rollback()
-        print(f"Erro ao editar perfil: {e}")
-        flash("Erro ao salvar os dados.", "danger")
-        return redirect(url_for('configuracoes', aba='perfil'))
+        except Exception as e:
+            database.session.rollback()
+            print(f"ERRO AO SALVAR PERFIL: {e}")
+            flash(f"Erro técnico: {e}", "danger")
+            return redirect(url_for('dashboard', aba='perfil'))
+
+    return redirect(url_for('dashboard', aba='perfil'))
 
 
 @app.route('/upload-foto-perfil', methods=['POST'])
@@ -478,17 +492,15 @@ def dashboard():
     convites_pendentes, meus_amigos = [], []
     total_pendentes = 0
     enviados_pendentes = []
-    locais_populares = []  # Garante que 'locais' sempre exista para o template
-    total_conexoes = 0  # Garante um valor inicial seguro
+    locais_populares = []
+    total_conexoes = 0
+    lista_sugestoes = []  # Inicializa vazia
 
     # --- 2. COLETA DE DADOS INICIAIS ---
     perfil_usuario = current_user.perfil
     memorias_usuario = VinculoUsuarioLocal.query.filter_by(usuario_id=current_user.id).all()
     contagem_memorias = len(memorias_usuario)
     contagem_preferencias = current_user.interesses.count()
-
-    # Buscamos as sugestões uma única vez
-    lista_sugestoes = obter_sugestoes_pioneiras(current_user)
 
     categorias = Taxonomia.query.filter(~Taxonomia.contextos.any()).order_by(Taxonomia.nome).all()
     minhas_prefs_ids = [p.id for p in current_user.interesses]
@@ -498,8 +510,8 @@ def dashboard():
             "id": p.id,
             "nome": p.nome,
             "contagem": p.contagem_uso or 0,
-            'v_usu': bool(p.visivel_usuario),  # Importante!
-            'v_neg': bool(p.visivel_negocio),  # Importante!
+            'v_usu': bool(p.visivel_usuario),
+            'v_neg': bool(p.visivel_negocio),
             "tipo": "empresa" if any(c.visivel_negocio for c in p.contextos) else "pessoa"
         } for p in current_user.interesses
     ]
@@ -516,27 +528,25 @@ def dashboard():
         lida=False
     ).order_by(Notificacao.data_criacao.desc()).all()
 
-    # --- 4. LÓGICA DE DIRECIONAMENTO ---
+    # --- 3. LÓGICA DE DIRECIONAMENTO ---
     if current_user.nivel_acesso >= 10:
         aba = aba_solicitada if aba_solicitada else 'feed'
     else:
-        if aba_solicitada:
-            aba = aba_solicitada
+        if not perfil_usuario or not perfil_usuario.nome_completo:
+            aba = 'perfil'
+        elif contagem_memorias < 1:
+            aba = 'memorias'
+        elif contagem_preferencias < 10:
+            aba = 'preferencias'
         else:
-            if not perfil_usuario or not perfil_usuario.nome_completo:
-                aba = 'perfil'
-            elif contagem_memorias < 1:
-                aba = 'memorias'
-            else:
-                aba = 'preferencias'
+            aba = 'perfil'
 
-    # --- 5. BUSCA DE DADOS SOCIAIS (Se qualificado) ---
+    # --- 4. BUSCA DE DADOS SOCIAIS (A CIRURGIA) ---
     if onboarding_completo or current_user.nivel_acesso >= 10:
         meus_grupos = MembroGrupo.query.filter_by(id_usuario=current_user.id).all()
         convites_pendentes = Conexoes.query.filter_by(id_destinatario=current_user.id, status='pendente').all()
         total_pendentes = len(convites_pendentes)
 
-        # Convites que EU enviei e estão aguardando
         enviados_pendentes = Conexoes.query.filter_by(
             id_remetente=current_user.id,
             status='pendente'
@@ -544,50 +554,40 @@ def dashboard():
 
         if aba == 'feed':
             atividades_recentes = obter_atividades_feed(current_user)
+            # No Feed, carregamos apenas o essencial para o carrossel (Rápido)
+            lista_sugestoes = obter_sugestoes_carrossel(current_user)
 
-        # AGORA SIM: Lógica de Minha Rede
         if aba == 'conexoes':
-
-
-            # 1. Busca as conexões aceitas
+            # 1. PARTE: MINHA REDE (Amigos Atuais)
             conexoes_aceitas = Conexoes.query.filter(
                 ((Conexoes.id_remetente == current_user.id) | (Conexoes.id_destinatario == current_user.id)),
                 (Conexoes.status == 'aceito')
             ).all()
 
-            # 2. Prepara os IDs para comparação
-            minhas_tags_ids = [t.id for t in current_user.interesses]
             meus_locais_ids = [m.local_id for m in memorias_usuario]
 
             for c in conexoes_aceitas:
                 amigo = c.destinatario if c.id_remetente == current_user.id else c.remetente
-
-                # Afinidade: Interesses
-                amigo.total_prefs_comum = len([t for t in amigo.interesses if t.id in minhas_tags_ids])
-
-                # Afinidade: Locais (Memórias)
+                # Afinidade calculada apenas para quem já é amigo
+                amigo.total_prefs_comum = len([t for t in amigo.interesses if t.id in minhas_prefs_ids])
                 locais_amigo = [m.local_id for m in VinculoUsuarioLocal.query.filter_by(usuario_id=amigo.id).all()]
                 amigo.total_locais_comum = len(set(meus_locais_ids) & set(locais_amigo))
-
-                # Data de conexão
-                # No loop: for c in conexoes_aceitas:
                 amigo.data_conexao = c.data_aceite.strftime('%m/%Y') if c.data_aceite else "Recente"
                 meus_amigos.append(amigo)
 
-        # Cálculo do total para os cards do topo (Independente da aba)
-        if aba == 'conexoes':
             total_conexoes = len(meus_amigos)
-        else:
+
+            # 2. PARTE: SUGESTÕES (Aba Completa - Profundo)
+            lista_sugestoes = obter_todas_sugestoes_aba(current_user)
+
+        # Cálculo do total para os cards do topo (Se não estiver na aba conexões)
+        if aba != 'conexoes':
             total_conexoes = Conexoes.query.filter(
                 ((Conexoes.id_remetente == current_user.id) | (Conexoes.id_destinatario == current_user.id)),
                 (Conexoes.status == 'aceito')
             ).count()
 
-        # Dentro da função dashboard...
-
-        # --- AJUSTE NA ABA LOCAIS (COM BUSCA E AUTOCOMPLETE) ---
         if aba == 'locais':
-            # Esqueça o termo_busca aqui. A lista da tela é fixa e elitista (só com seguidores).
             locais_populares = database.session.query(
                 Local,
                 func.count(VinculoUsuarioLocal.id).label('total')
@@ -597,8 +597,7 @@ def dashboard():
                 .order_by(func.count(VinculoUsuarioLocal.id).desc(), Local.nome.asc()) \
                 .all()
 
-
-    # --- 6. FORMULÁRIOS ---
+    # --- 5. FORMULÁRIOS ---
     form_p = FormPerfil(obj=perfil_usuario)
     form_a = FormApelido()
     form_convite = FormConvite()
@@ -616,7 +615,7 @@ def dashboard():
                            contagem_memorias=contagem_memorias,
                            contagem_preferencias=contagem_preferencias,
                            memorias_usuario=memorias_usuario,
-                           sugestoes=lista_sugestoes,  # Passa a lista completa
+                           sugestoes=lista_sugestoes,
                            atividades_recentes=atividades_recentes,
                            meus_grupos=meus_grupos,
                            convites=convites_pendentes,
@@ -680,40 +679,32 @@ def buscar_locais():
 def buscar_interesses_onboarding():
     try:
         termo = request.args.get('q', '').strip()
-        if len(termo) < 2:
-            return jsonify([])
+        if len(termo) < 2: return jsonify([])
 
-        # Buscamos tags visíveis para o usuário que batem com o termo
         sugestoes = Taxonomia.query.filter(
             Taxonomia.nome.ilike(f'%{termo}%'),
-            Taxonomia.visivel_usuario == True # Mantendo o filtro de visibilidade
+            Taxonomia.visivel_usuario == True
         ).limit(15).all()
 
         lista_final = []
         for t in sugestoes:
-            # 1. SEGURANÇA: Verifica se existe contexto antes de acessar o índice 0
-            # Na sua model 'contextos' são os pais e 'subitens' são os filhos
+            # Respeitando a hierarquia multifacetada da sua Model
             pais = t.contextos
             pai_direto = pais[0] if pais else None
 
-            item = {
+            lista_final.append({
                 'id': t.id,
                 'nome': t.nome,
                 'v_usu': bool(t.visivel_usuario),
                 'v_neg': bool(t.visivel_negocio),
                 'contagem': t.contagem_uso or 0,
-                # Dados do Pai para a lógica de "Categoria" no seu JS
                 'id_pai': pai_direto.id if pai_direto else None,
-                'categoria_pai': pai_direto.nome if pai_direto else 'Geral'
-            }
-            lista_final.append(item)
-
+                'categoria_pai': pai_direto.nome if pai_direto else (t.categoria or 'Geral')
+            })
         return jsonify(lista_final)
-
     except Exception as e:
-        # Importante: O print ajuda você a ver o erro no terminal do PyCharm
         print(f"DEBUG API BUSCA: {str(e)}")
-        return jsonify([]), 200 # Retornamos lista vazia em vez de 500 para não travar o front
+        return jsonify([]), 200
 
 
 @app.route('/api/dashboard/taxonomia/adicionar', methods=['POST'])
@@ -1397,22 +1388,54 @@ def inject_global_vars():
 
     return contexto
 
-def sugerir_conexoes_reais(usuario_atual):
-    # 1. Pegar todos os Grupos que o Carlos (usuario_atual) frequenta
-    meus_grupos_ids = [m.id_grupo for m in MembroGrupo.query.filter_by(id_usuario=usuario_atual.id).all()]
 
-    # 2. Buscar amigos do Gilmar que estão nesses mesmos grupos
-    # mas que ainda não são amigos do Carlos
-    sugestoes = database.session.query(Usuario, GrupoSocial.nome) \
-        .join(MembroGrupo, Usuario.id == MembroGrupo.id_usuario) \
-        .join(GrupoSocial, MembroGrupo.id_grupo == GrupoSocial.id) \
-        .join(Conexoes, (Usuario.id == Conexoes.id_destinatario) | (Usuario.id == Conexoes.id_remetente)) \
-        .filter(MembroGrupo.id_grupo.in_(meus_grupos_ids)) \
-        .filter(Usuario.id != usuario_atual.id) \
-        .filter(Conexoes.status == 'aceito') \
-        .filter(~Usuario.id.in_([a.id for a in usuario_atual.amigos])) \
-        .distinct().all()
-    return sugestoes
+def sugerir_conexoes_reais(usuario_atual):
+    from flask import current_app
+    data_fim_beta = current_app.config.get('DATA_FIM_BETA')
+    # Verifica se estamos no Beta (se a data atual é menor que o fim do beta)
+    is_beta = True
+    if data_fim_beta:
+        # Garante que a comparação considere timezone se necessário
+        agora = datetime.now(data_fim_beta.tzinfo) if data_fim_beta.tzinfo else datetime.now()
+        is_beta = agora < data_fim_beta
+
+    # 1. Identifica onde o usuário atual circula
+    meus_locais_ids = [v.local_id for v in VinculoUsuarioLocal.query.filter_by(usuario_id=usuario_atual.id).all()]
+
+    if not meus_locais_ids:
+        return []
+
+    # 2. Base da Query: Usuários que frequentam os mesmos locais
+    query = database.session.query(Usuario).join(VinculoUsuarioLocal, Usuario.id == VinculoUsuarioLocal.usuario_id)
+
+    # 3. Filtros Universais (Beta ou não)
+    query = query.filter(VinculoUsuarioLocal.local_id.in_(meus_locais_ids)) \
+        .filter(Usuario.id != usuario_atual.id)
+
+    # 4. Filtro de "Já são amigos": Não sugerir quem já está na lista de amigos
+    ids_amigos = [a.id for a in usuario_atual.amigos]
+    if ids_amigos:
+        query = query.filter(not_(Usuario.id.in_(ids_amigos)))
+
+    # 5. LÓGICA DE FIADOR (A "Trava" que você mencionou)
+    if not is_beta:
+        # Se NÃO for beta, aplicamos a trava:
+        # O usuário sugerido precisa ter uma conexão aceita com alguém que já é meu amigo.
+        from feedin.models import Conexoes  # Ajuste o import conforme seu projeto
+
+        query = query.join(Conexoes, (Usuario.id == Conexoes.id_destinatario) | (Usuario.id == Conexoes.id_remetente)) \
+            .filter(Conexoes.status == 'aceito') \
+            .filter(or_(
+            Conexoes.id_remetente.in_(ids_amigos),
+            Conexoes.id_destinatario.in_(ids_amigos)
+        ))
+
+    # 6. Finalização
+    sugestoes = query.distinct().limit(10).all()
+
+    # Retorna no formato que o seu carrossel Jinja espera: item.usuario
+    return [{'usuario': u} for u in sugestoes]
+
 
 #------------ Rota obrigatória para os beta-testers, a adição de locais, que servirão para concentrar novos usuários que chegarem
 @app.route('/primeiros-passos')
@@ -1768,63 +1791,70 @@ def salvar_preferencias():
     novos_termos_raw = request.form.get('novos_termos', '')
 
     try:
-        # 1. Converte IDs com segurança
+        # 1. Obter IDs e Termos
         ids_selecionados = [int(tid) for tid in ids_raw.split(',') if tid.strip().isdigit()]
 
-        # 2. Atualiza a relação (Lógica de substituição)
-        # Importante: Verifique se o nome no model é 'interesses'
+        # Como o relacionamento é lazy='dynamic', para limpar a lista fazemos:
+        # Nota: Em relacionamentos dinâmicos, o ideal é converter para lista
+        # ou remover um a um, mas atribuir uma lista vazia funciona se o backref permitir.
         current_user.interesses = []
 
-        # Tags existentes
-        for tid in ids_selecionados:
-            tag = Taxonomia.query.get(tid)
-            if tag:
+        # 2. Adicionar Tags Existentes
+        if ids_selecionados:
+            tags_existentes = Taxonomia.query.filter(Taxonomia.id.in_(ids_selecionados)).all()
+            for tag in tags_existentes:
                 current_user.interesses.append(tag)
 
-        # 3. Novos Termos (Sugestões)
+        # 3. Adicionar Novos Termos (Respeitando sua Model)
         if novos_termos_raw:
             for nome in novos_termos_raw.split(','):
                 nome_limpo = nome.strip()
-                if nome_limpo:
-                    # Busca para não duplicar na tabela global de Taxonomia
-                    tag_existente = Taxonomia.query.filter_by(nome=nome_limpo).first()
-                    if not tag_existente:
-                        tag_existente = Taxonomia(nome=nome_limpo, v_usu=True, v_neg=False)
-                        database.session.add(tag_existente)
-                        database.session.flush()  # Para garantir que temos o ID
+                if not nome_limpo: continue
 
-                    if tag_existente not in current_user.interesses:
-                        current_user.interesses.append(tag_existente)
+                tag_nova = Taxonomia.query.filter_by(nome=nome_limpo).first()
+                if not tag_nova:
+                    # Usando exatamente os nomes das colunas da sua Model
+                    tag_nova = Taxonomia(
+                        nome=nome_limpo,
+                        status='pendente',
+                        visivel_usuario=True,
+                        visivel_negocio=False,
+                        categoria='Gosto'
+                    )
+                    database.session.add(tag_nova)
+                    database.session.flush()  # Importante para gerar o ID para a tabela de ligação
 
+                if tag_nova not in current_user.interesses:
+                    current_user.interesses.append(tag_nova)
+
+        # 4. Commit Principal
+        database.session.commit()
+
+        # 5. Validação de Nível (AQUI ESTÁ A MUDANÇA)
+        # Como é lazy='dynamic', .count() é um método do SQLAlchemy que gera um SELECT COUNT no banco.
+        # É mais seguro e performático.
         total_atual = current_user.interesses.count()
         nivel_antes = current_user.nivel_acesso
 
-        # 4. A LÓGICA DE DIRECIONAMENTO (A "GRANDE CHAVE")
-
-        # Caso A: Ele era novato e COMPLETOU a missão
         if nivel_antes < 10 and total_atual >= 10:
             processar_mudanca_nivel(current_user, 10)
-            database.session.commit()
+            database.session.commit()  # Commit da mudança de nível
             flash("Sensacional! Você agora é um Pioneiro do FeedIn.", "success")
             return redirect(url_for('feed'))
 
-            # Caso B: Ele é novato mas AINDA NÃO completou
         elif nivel_antes < 10:
-            database.session.commit()
-            # Note que aqui também usamos count() se precisar exibir
             flash(f"Interesses salvos! Selecione mais {10 - total_atual} para liberar seu acesso.", "info")
             return redirect(url_for('configuracoes', aba='preferencias'))
 
-        # Caso C: Ele já era veterano (Nível >= 10)
         else:
-            database.session.commit()
             flash("Suas preferências foram atualizadas com sucesso.", "success")
             return redirect(url_for('configuracoes', aba='preferencias'))
 
     except Exception as e:
         database.session.rollback()
-        # Aqui você descobre o culpado no console do PyCharm
-        print(f"DEBUG SALVAR PREFS: {str(e)}")
+        print(f"DEBUG SALVAR PREFS (Erro Real): {str(e)}")
+        # Se quiser ver o rastro completo no console do servidor:
+        # import traceback; traceback.print_exc()
         flash("Erro ao salvar preferências. Tente novamente.", "danger")
         return redirect(url_for('configuracoes', aba='preferencias'))
 
@@ -1879,62 +1909,61 @@ def declinar_conexao(id_conexao):
 
 
 def obter_sugestoes_pioneiras(usuario_atual):
-    """
-    Motor de Afinidade: Ajustado para lidar com relações dinâmicas (lazy='dynamic')
-    e evitar o erro de object population.
-    """
-    from sqlalchemy import or_
-
-    # 1. Automação de Rigor
-    total_pioneiros = Usuario.query.filter_by(is_pioneiro=True).count()
+    # 1. Automação de Rigor (Mantido)
+    total_pioneiros = Usuario.query.filter(Usuario.nivel_acesso >= 10).count()
     modo_rigoroso = app.config.get('MODO_PRODUCAO') or (total_pioneiros > 100)
 
-    # 2. Lista de Exclusão (Eu + conexões existentes)
+    # 2. Lista de Exclusão (Corrigido para ser mais performático)
+    # No passo 2 da sua função obter_sugestoes_pioneiras:
     relacoes_existentes = Conexoes.query.filter(
         (Conexoes.id_remetente == usuario_atual.id) |
         (Conexoes.id_destinatario == usuario_atual.id)
     ).all()
 
-    ids_bloqueados = [c.id_remetente if c.id_remetente != usuario_atual.id else c.id_destinatario
-                      for c in relacoes_existentes]
-    ids_bloqueados.append(usuario_atual.id)
+    # Certifique-se de que esta lista pegue o "outro lado" de cada conexão
+    ids_bloqueados = []
+    for c in relacoes_existentes:
+        if c.id_remetente != usuario_atual.id:
+            ids_bloqueados.append(c.id_remetente)
+        if c.id_destinatario != usuario_atual.id:
+            ids_bloqueados.append(c.id_destinatario)
 
-    # 3. Coleta de IDs (Ajustado para relação dinâmica)
-    # Como é dinâmico, tratamos como query para pegar os IDs
-    minhas_prefs_ids = [int(p.id) for p in usuario_atual.interesses.all()]
+    ids_bloqueados.append(usuario_atual.id)
+    ids_bloqueados = list(set(ids_bloqueados))  # Remove duplicatas
+
+    # 3. Coleta de IDs (Interesses e seus Pais)
+    minhas_prefs = usuario_atual.interesses.all()
+    minhas_prefs_ids = [int(p.id) for p in minhas_prefs]
 
     ids_meus_pais = []
-    for p in usuario_atual.interesses.all():
-        for pai in p.contextos:
-            ids_meus_pais.append(int(pai.id))
+    for p in minhas_prefs:
+        # Pega os IDs dos pais para aumentar o espectro de match
+        ids_meus_pais.extend([int(pai.id) for pai in p.contextos])
 
     busca_total_ids = list(set(minhas_prefs_ids + ids_meus_pais))
     meus_grupos_ids = [m.id_grupo for m in usuario_atual.membros_grupos]
 
-    # 4. A QUERY (Limpa de Eager Loading nos interesses)
+    # 4. A QUERY (AJUSTADA)
     possiveis_conexoes = (Usuario.query
                           .outerjoin(MembroGrupo)
                           .options(
-        # Carregamos apenas o que NÃO é dinâmico
         database.joinedload(Usuario.perfil),
         database.joinedload(Usuario.membros_grupos)
-        .joinedload(MembroGrupo.grupo)
-        .joinedload(GrupoSocial.local)
     )
-                          .filter(Usuario.is_pioneiro == True)
+                          # AJUSTE: Buscamos por nível_acesso >= 10 OU is_pioneiro
+                          .filter(or_(Usuario.nivel_acesso >= 10, Usuario.is_pioneiro == True))
                           .filter(~Usuario.id.in_(ids_bloqueados))
                           .filter(
         or_(
-            MembroGrupo.id_grupo.in_(meus_grupos_ids) if meus_grupos_ids else False,
-            # O any() é seguro, pois gera um sub-select no banco e não popula o objeto agora
+            Usuario.membros_grupos.any(MembroGrupo.id_grupo.in_(meus_grupos_ids)) if meus_grupos_ids else False,
             Usuario.interesses.any(Taxonomia.id.in_(busca_total_ids))
         )
     )
                           .distinct()
-                          .limit(10)
+                          .limit(15)  # Aumentamos o limite antes do filtro de rigor
                           .all())
 
-    # 5. Processamento dos Cards
+    # 5. Processamento dos Cards (Mantido com melhorias de segurança)
     sugestoes_finais = []
     meus_locais_ids = [v.local_id for v in usuario_atual.vinculos]
 
@@ -1942,45 +1971,122 @@ def obter_sugestoes_pioneiras(usuario_atual):
         amigo_ponte = usuario_atual.get_amigo_em_comum(outro)
 
         if modo_rigoroso and not amigo_ponte:
-            continue
+            # Se tiver poucos usuários no sistema, o modo rigoroso pode esvaziar o carrossel
+            if total_pioneiros > 20:
+                continue
 
-        # --- Lógica de Locais ---
-        locais_comum = []
-        for v_outro in outro.vinculos:
-            if v_outro.local_id in meus_locais_ids:
-                nome_local = v_outro.local.nome
-                epoca = v_outro.experiencia or ""
-                locais_comum.append(f"{nome_local} {epoca}")
+        # Lógica de Interesses em Comum
+        # Como 'outro.interesses' é dinâmico, filtramos via Python para o Card
+        interesses_outro_ids = [p.id for p in outro.interesses.all()]
+        interesses_comum_nomes = [p.nome for p in outro.interesses.all() if p.id in minhas_prefs_ids]
 
+        # Lógica de Locais
+        locais_comum = [v.local.nome for v in outro.vinculos if v.local_id in meus_locais_ids]
         locais_unicos = list(set(locais_comum))
 
-        # --- Lógica de Preferências (Ajustada para query dinâmica) ---
-        # Como 'outro.interesses' é uma query, usamos .all() para filtrar no Python
-        # ou filtramos na query. Para o card, o .all() resolve:
-        interesses_outro = outro.interesses.all()
-        todos_interesses_comum = [p.nome for p in interesses_outro if int(p.id) in minhas_prefs_ids]
-
-        # Limitamos a exibição para os 3 primeiros
-        preferencias_exibicao = todos_interesses_comum[:3]
-        total_restante_prefs = max(0, len(todos_interesses_comum) - 3)
-
-        # --- Definição do Motivo e Peso ---
-        txt_motivo = f"Conhece {amigo_ponte.username}" if amigo_ponte else "Pioneiro FeedIn"
-        calculo_peso = (len(locais_unicos) * 5) + (len(todos_interesses_comum) * 2)
+        # Cálculo de Peso para o Ranking
+        calculo_peso = (len(locais_unicos) * 10) + (len(interesses_comum_nomes) * 5)
+        if amigo_ponte: calculo_peso += 20
 
         sugestoes_finais.append({
             'usuario': outro,
-            'motivo': txt_motivo,
+            'motivo': f"Conhece {amigo_ponte.username}" if amigo_ponte else "Interesses em comum",
             'amigo_ponte': amigo_ponte,
-            'preferencias': preferencias_exibicao,
-            'total_restante_prefs': total_restante_prefs,
+            'preferencias': interesses_comum_nomes[:3],
+            'total_restante_prefs': max(0, len(interesses_comum_nomes) - 3),
             'locais': locais_unicos,
             'total_locais': len(locais_unicos),
             'peso': calculo_peso
         })
 
-    # Ordena pelo peso (afinidade)
     return sorted(sugestoes_finais, key=lambda x: x['peso'], reverse=True)
+
+
+def obter_sugestoes_carrossel(usuario_atual):
+    bloqueados = ids_bloqueados_pelo_usuario(usuario_atual)
+    # Pega 15 candidatos para filtrar os 10 melhores
+    possiveis = Usuario.query.filter(or_(Usuario.nivel_acesso >= 10, Usuario.is_pioneiro == True)) \
+        .filter(~Usuario.id.in_(bloqueados)) \
+        .limit(15).all()
+
+    processados = processar_dados_conexoes(usuario_atual, possiveis)
+    return sorted(processados, key=lambda x: x['peso'], reverse=True)[:10]
+
+
+def ids_bloqueados_pelo_usuario(usuario_atual):
+    """
+    Retorna uma lista de IDs que não devem aparecer em sugestões:
+    O próprio usuário, amigos atuais e conexões pendentes.
+    """
+    # 1. Já começa com o ID do próprio usuário
+    bloqueados = [usuario_atual.id]
+
+    # 2. Busca conexões (qualquer status: aceito ou pendente)
+    relacoes = Conexoes.query.filter(
+        (Conexoes.id_remetente == usuario_atual.id) |
+        (Conexoes.id_destinatario == usuario_atual.id)
+    ).all()
+
+    for r in relacoes:
+        if r.id_remetente != usuario_atual.id:
+            bloqueados.append(r.id_remetente)
+        if r.id_destinatario != usuario_atual.id:
+            bloqueados.append(r.id_destinatario)
+
+    return list(set(bloqueados))  # Remove duplicatas por segurança
+
+
+def processar_dados_conexoes(usuario_atual, lista_usuarios):
+    """
+    Transforma uma lista de objetos Usuario em um dicionário
+    com pesos, interesses em comum e locais compartilhados.
+    """
+    sugestoes_finais = []
+
+    # Cache dos dados do usuário atual para comparação rápida
+    minhas_prefs_ids = [p.id for p in usuario_atual.interesses]
+    meus_locais_ids = [v.local_id for v in usuario_atual.vinculos]
+
+    for outro in lista_usuarios:
+        # 1. Verifica amigo em comum (Ponte)
+        amigo_ponte = usuario_atual.get_amigo_em_comum(outro)
+
+        # 2. Interesses em comum
+        interesses_comum_nomes = [p.nome for p in outro.interesses.all() if p.id in minhas_prefs_ids]
+
+        # 3. Locais em comum
+        locais_comum = [v.local.nome for v in outro.vinculos if v.local_id in meus_locais_ids]
+        locais_unicos = list(set(locais_comum))
+
+        # 4. Cálculo de Peso (Ranking)
+        # Locais valem 10, Interesses valem 5, Amigo em comum vale 20
+        calculo_peso = (len(locais_unicos) * 10) + (len(interesses_comum_nomes) * 5)
+        if amigo_ponte:
+            calculo_peso += 20
+
+        sugestoes_finais.append({
+            'usuario': outro,
+            'motivo': f"Conhece {amigo_ponte.username}" if amigo_ponte else "Interesses em comum",
+            'amigo_ponte': amigo_ponte,
+            'preferencias': interesses_comum_nomes[:3],  # Mostra só os 3 primeiros no card
+            'total_restante_prefs': max(0, len(interesses_comum_nomes) - 3),
+            'locais': locais_unicos,
+            'total_locais': len(locais_unicos),
+            'peso': calculo_peso
+        })
+
+    return sugestoes_finais
+
+
+def obter_todas_sugestoes_aba(usuario_atual):
+    bloqueados = ids_bloqueados_pelo_usuario(usuario_atual)
+    # Sem limit agressivo para a aba ser completa
+    possiveis = Usuario.query.filter(or_(Usuario.nivel_acesso >= 10, Usuario.is_pioneiro == True)) \
+        .filter(~Usuario.id.in_(bloqueados)).all()
+
+    processados = processar_dados_conexoes(usuario_atual, possiveis)
+    # Na aba, talvez você queira ordenar por peso também, ou por nome
+    return sorted(processados, key=lambda x: x['peso'], reverse=True)
 
 
 @app.route("/declinar-sugestao/<int:id_alvo>", methods=["POST"])
@@ -2722,7 +2828,13 @@ def ver_perfil(usuario_id):
     e_o_proprio = (current_user.id == user_alvo.id)
     # Chamada dedicada à lógica de locais populares do usuário
     locais_seguidos = Local.get_locais_populares_por_usuario(user_alvo.id)
+    relacao = Conexoes.query.filter(
+        ((Conexoes.id_remetente == current_user.id) & (Conexoes.id_destinatario == user_alvo.id)) |
+        ((Conexoes.id_remetente == user_alvo.id) & (Conexoes.id_destinatario == current_user.id))
+    ).first()
 
+    status_conexao = relacao.status if relacao else "nenhuma"
+    sou_remetente = (relacao.id_remetente == current_user.id) if relacao else False
     # 1. Memórias (Vínculos Usuario-Local antigos)
     memorias_alvo = VinculoUsuarioLocal.query.filter_by(usuario_id=usuario_id).order_by(
         VinculoUsuarioLocal.id.desc()).all()
@@ -2774,6 +2886,8 @@ def ver_perfil(usuario_id):
 
     return render_template("perfil_publico.html",
                            user_alvo=user_alvo,
+                           status_conexao=status_conexao,
+                           sou_remetente=sou_remetente,
                            e_o_proprio=e_o_proprio,
                            postagens=mural_postagens,  # Postagens autorais
                            fotos_com_voce=fotos_com_alvo,  # Postagens de terceiros onde ele aparece

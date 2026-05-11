@@ -112,7 +112,59 @@
                         border-color: {{ '#D4AF37' if user_alvo.is_pioneiro else 'white' }} !important;">
 
             <h2 class="fw-bold mt-3 mb-0">{{ user_alvo.perfil.nome_completo or user_alvo.username }}</h2>
-            <p class="text-muted small mb-2">@{{ user_alvo.username }}</p>
+            <p class="text-muted small mb-2">
+                @{{ user_alvo.username }}
+
+                {# Resgate da Data e Signo #}
+                {% if user_alvo.perfil.data_nascimento %}
+                    <span class="mx-2 opacity-50">•</span>
+                    <span class="text-secondary">
+                        <i class="bi bi-calendar3 me-1" style="font-size: 0.75rem;"></i>
+                        {{ user_alvo.perfil.data_nascimento.strftime('%m/%Y') }}
+                    </span>
+
+                    {% if signo_nome %}
+                        <span class="ms-2 badge bg-light text-primary border-0 fw-medium shadow-sm">
+                            {# Aqui o ícone deve aparecer se a versão do BI for a 1.11.3 #}
+                            <i class="{{ signo_icone }} me-1"></i> {{ signo_nome }}
+                        </span>
+                    {% endif %}
+                {% endif %}
+            </p>
+
+            {# ÁREA DE CONEXÃO - PERFIL PÚBLICO #}
+            {% if not e_o_proprio %}
+                <div class="mt-3 mb-4">
+                    {% if not conexao %}
+                        {# Caso 1: Nenhuma conexão enviada ainda #}
+                        <form action="{{ url_for('conectar_pioneiro', id_destinatario=user_alvo.id) }}" method="POST">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm transition-hover">
+                                <i class="bi bi-person-plus-fill me-2"></i>Brindar Conexão
+                            </button>
+                        </form>
+                    {% elif conexao.status == 'pendente' %}
+                        {# Caso 2: Alguém já pediu, mas não aceitou #}
+                        {% if conexao.id_remetente == current_user.id %}
+                            <button class="btn btn-warning rounded-pill px-4 fw-bold shadow-sm disabled">
+                                <i class="bi bi-hourglass-split me-2"></i>Aguardando Confirmação
+                            </button>
+                        {% else %}
+                            <form action="{{ url_for('aceitar_conexao', conexao_id=conexao.id) }}" method="POST">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-success rounded-pill px-4 fw-bold shadow-sm">
+                                    Aceitar Brinde
+                                </button>
+                            </form>
+                        {% endif %}
+                    {% elif conexao.status == 'aceito' %}
+                        {# Caso 3: Já são amigos #}
+                        <button class="btn btn-outline-primary rounded-pill px-4 fw-bold shadow-sm disabled">
+                            <i class="bi bi-person-check-fill me-2"></i>Conectado
+                        </button>
+                    {% endif %}
+                </div>
+            {% endif %}
 
             {% if user_alvo.is_pioneiro %}
                 <div class="mb-3">
