@@ -20,7 +20,7 @@ from functools import wraps
 from sqlalchemy import or_, func, asc, and_, not_
 from sqlalchemy.orm import joinedload
 from cryptography.fernet import Fernet  # Para criptografia reversível
-from PIL import Image
+from PIL import Image, ImageOps
 
 import secrets, os, re, io, csv, json, pytz, uuid
 

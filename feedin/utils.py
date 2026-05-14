@@ -1,36 +1,33 @@
 import os, re
 import secrets
-from PIL import Image
+from PIL import Image, ImageOps
 from flask import current_app
 from datetime import datetime, timezone
 
 def salvar_imagem(foto):
-    """
-    Processa a foto: corta em 1:1, redimensiona para 800x800 e salva em .webp
-    """
-
-    # 1. Trava de segurança inicial
     if not foto or not hasattr(foto, 'filename') or foto.filename == '':
         return None
 
-    # 2. Gerar nome único com extensão .webp
     codigo = secrets.token_hex(8)
     nome_arquivo = f"perfil_{codigo}.webp"
 
-    # Garante que a pasta existe
     pasta_destino = os.path.join(current_app.root_path, 'static/fotos_perfil')
     if not os.path.exists(pasta_destino):
         os.makedirs(pasta_destino)
 
     caminho_completo = os.path.join(pasta_destino, nome_arquivo)
 
-    print(f"Tentando salvar a imagem: {foto.filename}")
-
     try:
-        # 3. Abrir a imagem com Pillow
         img = Image.open(foto)
 
-        # 4. Lógica de Crop Central (Garantir o Quadrado Perfeito 1:1)
+        # --- NOVO: Corrigir orientação EXIF (evita foto deitada) ---
+        img = ImageOps.exif_transpose(img)
+
+        # --- NOVO: Converter para RGB (Garante compatibilidade com WebP e remove transparência) ---
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+
+        # 4. Lógica de Crop Central 1:1
         largura, altura = img.size
         if largura > altura:
             margem = (largura - altura) / 2
@@ -39,14 +36,11 @@ def salvar_imagem(foto):
             margem = (altura - largura) / 2
             img = img.crop((0, margem, largura, altura - margem))
 
-        # 5. Redimensionar para o padrão 800x800
+        # 5. Redimensionar 800x800
         img = img.resize((800, 800), Image.Resampling.LANCZOS)
 
-        # 6. Salvar em WEBP
+        # 6. Salvar em WEBP (Quality 85 é o ponto ideal entre peso e qualidade)
         img.save(caminho_completo, "WEBP", quality=85)
-
-        # CORREÇÃO AQUI: Alterado de nome_novo para nome_arquivo
-        print(f"DEBUG: Nome gerado pela salvar_imagem: {nome_arquivo}")
 
         return nome_arquivo
 

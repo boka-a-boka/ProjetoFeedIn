@@ -69,6 +69,7 @@ app.config['REMEMBER_COOKIE_DURATION'] = timedelta(days=30)
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
 app.config['SESSION_PROTECTION'] = 'strong'
 app.config["PASTA_FOTOS"] = "fotos_perfil"
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
 # Lógica de Segurança de Cookies (SSL)
 if os.name != 'nt' or os.environ.get('FLASK_ENV') == 'production':
