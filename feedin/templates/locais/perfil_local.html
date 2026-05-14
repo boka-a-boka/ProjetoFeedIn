@@ -143,11 +143,16 @@
             <div class="sticky-top" style="top: 20px;">
                 <div class="card border-0 shadow-sm rounded-4 p-4">
                     <h6 class="text-uppercase fw-bold text-muted small mb-4">Quem frequenta</h6>
-                    {% for atividade in local.atividades %}
+
+                    {# Aplicamos o filtro sort baseado no nome_completo do perfil #}
+                    {% for atividade in local.atividades|sort(attribute='criador.perfil.nome_completo', case_sensitive=False) %}
                         <div class="row align-items-center mb-3">
                             <div class="col-auto pe-0">
                                 <a href="{{ url_for('ver_perfil', usuario_id=atividade.id_criador) }}">
-                                    <img src="{{ url_for('servir_foto_perfil', usuario_id=atividade.id_criador) }}" class="rounded-circle border" width="45" height="45" style="object-fit: cover;">
+                                    <img src="{{ url_for('servir_foto_perfil', usuario_id=atividade.id_criador) }}"
+                                         class="rounded-circle border"
+                                         width="45" height="45"
+                                         style="object-fit: cover;">
                                 </a>
                             </div>
                             <div class="col ps-3">
