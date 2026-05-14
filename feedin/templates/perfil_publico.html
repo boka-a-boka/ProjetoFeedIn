@@ -86,9 +86,17 @@
 
 <div class="{{ classe_tema }}">
     {# 1. BOTÃO VOLTAR #}
-    <a href="javascript:history.back()" class="btn-voltar-feedin shadow-sm" title="Voltar">
-        <i class="bi bi-arrow-left fs-5"></i>
-    </a>
+    {% if e_o_proprio %}
+        {# Se for o dono do perfil, força o retorno para o feed da dashboard #}
+        <a href="{{ url_for('dashboard', aba='feed') }}" class="btn-voltar-feedin shadow-sm" title="Voltar para o Feed">
+            <i class="bi bi-arrow-left fs-5"></i>
+        </a>
+    {% else %}
+        {# Se for visitante, mantém o comportamento de voltar para onde ele estava #}
+        <a href="javascript:history.back()" class="btn-voltar-feedin shadow-sm" title="Voltar">
+            <i class="bi bi-arrow-left fs-5"></i>
+        </a>
+    {% endif %}
 
     {# 2. CAPA DO PERFIL #}
     {% set url_capa = url_for('static', filename='uploads/capas/' ~ (user_alvo.perfil.url_capa or 'default_capa.jpg')) %}
