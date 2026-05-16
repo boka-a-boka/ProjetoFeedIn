@@ -2678,60 +2678,62 @@ def incrementar_uso_taxonomia(termo_id):
 @app.route('/gerar-convite', methods=['POST'])
 @login_required
 def gerar_convite():
-    form = FormConvite() # Garanta que a classe FormConvite está importada
+    form = FormConvite()
 
     if form.validate_on_submit():
-        # 1. Captura e Limpeza de Dados
-        numero_destino = re.sub(r'\D', '', form.whatsapp.data)
-        nome_amigo = form.nome_convidado.data or "Amigo(a)"
-
-        contexto_raw = request.form.get('contexto_convite')
-        tipo_vinculo = None
-        id_referencia = None
-        nome_contexto = "nossa rede"
-
-        if contexto_raw and "_" in contexto_raw:
-            try:
-                tipo_vinculo, id_referencia = contexto_raw.split('_')
-                if tipo_vinculo == 'local':
-                    obj = Local.query.get(id_referencia)
-                    if obj: nome_contexto = obj.nome
-                elif tipo_vinculo == 'gosto':
-                    obj = AtividadeLocal.query.get(id_referencia)
-                    if obj: nome_contexto = obj.nome
-            except Exception as e:
-                app.logger.error(f"Erro ao processar contexto do convite: {e}")
-
-        # 2. Verificação de Exclusividade
-        convite_existente = Convite.query.filter_by(whatsapp_destino=numero_destino).first()
-
-        if convite_existente:
-            if convite_existente.id_remetente == current_user.id:
-                flash(f"Você já enviou um convite para {nome_amigo}!", "info")
-            else:
-                flash("Este número já recebeu um convite de outro membro do FeedIn.", "warning")
-            return redirect(url_for('dashboard', aba='configuracoes'))
-
-        # 3. Criação do Registro
-        novo_convite = Convite(
-            id_remetente=current_user.id,
-            whatsapp_destino=numero_destino,
-            tipo_vinculo=tipo_vinculo,
-            id_referencia=id_referencia,
-            status_onboarding=False
-        )
-
         try:
+            # 1. Captura e Limpeza de Dados
+            numero_destino = re.sub(r'\D', '', form.whatsapp.data)
+            nome_amigo = form.nome_convidado.data or "Amigo(a)"
+
+            contexto_raw = request.form.get('contexto_convite')
+            tipo_vinculo = None
+            id_referencia = None
+            nome_contexto = "nossa rede"
+
+            # Processa o contexto se ele existir e for válido
+            if contexto_raw and "_" in contexto_raw:
+                tipo_vinculo, id_raw = contexto_raw.split('_', 1)
+                if id_raw.isdigit():
+                    id_referencia = int(id_raw)
+
+                    # Busca o nome descritivo para a mensagem do WhatsApp
+                    if tipo_vinculo == 'local':
+                        obj = Local.query.get(id_referencia)
+                        if obj: nome_contexto = obj.nome
+                    elif tipo_vinculo == 'gosto':
+                        obj = AtividadeLocal.query.get(id_referencia)
+                        if obj: nome_contexto = obj.nome
+
+            # 2. Verificação de Exclusividade
+            convite_existente = Convite.query.filter_by(whatsapp_destino=numero_destino).first()
+
+            if convite_existente:
+                if convite_existente.id_remetente == current_user.id:
+                    flash(f"Você já enviou um convite para {nome_amigo}!", "info")
+                else:
+                    flash("Este número já recebeu um convite de outro membro do FeedIn.", "warning")
+                return redirect(url_for('dashboard', aba='configuracoes'))
+
+            # 3. Criação do Registro alinhado com a Model
+            novo_convite = Convite(
+                id_remetente=current_user.id,
+                whatsapp_destino=numero_destino,
+                tipo_vinculo=tipo_vinculo,  # 'local', 'gosto' ou None
+                id_referencia=id_referencia,  # Inteiro limpo ou None
+                status_onboarding=False
+            )
+
             database.session.add(novo_convite)
             database.session.commit()
 
-            # 4. Preparação do Link e Mensagem
-            link_registro = url_for('registrar',
+            # 4. Preparação do Link e Mensagem (CORRIGIDO PARA NEWUSER)
+            link_registro = url_for('newuser',  # <-- Aqui estava o erro! Mudado para 'newuser'
                                     indicado_por=current_user.id,
-                                    contexto=contexto_raw,
+                                    contexto=contexto_raw if contexto_raw else 'geral',
                                     _external=True)
 
-            if tipo_vinculo:
+            if tipo_vinculo and id_referencia:
                 texto_base = (
                     f"Olá {nome_amigo}! Aqui é o {current_user.username}. "
                     f"Estou te convidando para o FeedIn para resgatarmos nossas memórias "
@@ -2745,20 +2747,26 @@ def gerar_convite():
                     f"Crie seu perfil pelo link e me ajude a crescer a nossa rede: {link_registro}"
                 )
 
-            # Ajuste do prefixo internacional
+            # Ajuste do prefixo internacional (WhatsApp exige)
             numero_completo = numero_destino if numero_destino.startswith('55') else "55" + numero_destino
 
-            # Encode seguro da mensagem para URL usando urllib.parse.quote
+            # Encode seguro da URL
             whatsapp_url = f"https://api.whatsapp.com/send?phone={numero_completo}&text={quote(texto_base)}"
 
             return redirect(whatsapp_url)
 
         except Exception as e:
             database.session.rollback()
-            app.logger.error(f"Erro ao salvar convite: {e}")
-            flash("Ops! Tivemos um problema técnico ao gerar o link. Tente novamente.", "danger")
+            # LOG DO ERRO NO TERMINAL PARA DEBUEAR DE IMEDIATO
+            print("\n" + "=" * 60)
+            print(f"💥 ERRO CRÍTICO NA GRAVAÇÃO DO CONVITE: {str(e)}")
+            print("=" * 60 + "\n")
 
-    # Se a validação do form falhar, retorna para a página de configurações
+            flash(f"Erro no banco de dados: {str(e)}", "danger")
+            return redirect(url_for('dashboard', aba='configuracoes'))
+
+    # Se cair aqui, a validação do WTForms falhou (ex: número celular inválido)
+    flash("Por favor, preencha o número do WhatsApp corretamente.", "warning")
     return redirect(url_for('dashboard', aba='configuracoes'))
 
 

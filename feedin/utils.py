@@ -88,13 +88,10 @@ def tempo_atras_filter(value):
     return "agora mesmo"
 
 
-# Em utils.py
-# Em utils.py
-
 def processar_mudanca_nivel(usuario_alvo, novo_nivel, executor=None):
     """
     Centraliza toda promoção ou rebaixamento.
-    Se o nível subir para 10, dispara a verificação de Pioneiro.
+    Se o nível subir para 10 durante o Beta, dispara as regras de Pioneiro.
     """
     # 1. SEGURANÇA: Verificação de Hierarquia (Se houver executor)
     if executor and executor.nivel_acesso < 999:
@@ -104,23 +101,72 @@ def processar_mudanca_nivel(usuario_alvo, novo_nivel, executor=None):
     # 2. APLICAÇÃO DO NÍVEL (A mudança física no banco)
     nivel_anterior = usuario_alvo.nivel_acesso
     usuario_alvo.nivel_acesso = novo_nivel
-    # 3. GATILHO DE MÉRITO: O momento da "Condecoração"
-    # Se o usuário ACABOU de atingir o Nível 10 (ou superior)
-    if novo_nivel >= 10 and nivel_anterior < 10:
-        # IMPORTANTE: Aqui chamamos o método que criamos no Model Usuario
-        # Ele vai olhar o id_indicador e o número de conexões.
-        foi_promovido = usuario_alvo.check_pioneiro_status()
 
-        if foi_promovido:
-            # Aqui você pode até adicionar um log ou preparar uma mensagem especial
-            print(f"Selo de Pioneiro concedido para {usuario_alvo.username}")
+    # Captura o momento exato e o fim do período Beta configurado
+    agora = datetime.now(timezone.utc)
+    fim_beta = current_app.config.get('DATA_FIM_BETA')
+    is_periodo_beta = fim_beta and agora <= fim_beta
+
+    # 3. GATILHO DE MÉRITO: O momento da "Condecoração" ao atingir Nível 10
+    if novo_nivel >= 10 and nivel_anterior < 10:
+
+        # ---------------------------------------------------------------------
+        # SITUAÇÃO A: O Usuário veio por indicação (WhatsApp ou Admin)
+        # ---------------------------------------------------------------------
+        if usuario_alvo.id_indicador:
+
+            # SE ESTIVER NO BETA: Avalia concessão de selo por indicação de admin
+            if is_periodo_beta:
+                foi_promovido_por_origem = usuario_alvo.check_pioneiro_status()
+                if foi_promovido_por_origem:
+                    print(f"[ADMIN] Usuário {usuario_alvo.username} ganhou selo por indicação direta da administração.")
+
+            # Regra de Convite via WhatsApp (Sempre atualiza o vínculo, mas o selo do padrinho respeita o Beta)
+            try:
+                from models import Convite  # <-- Certifique-se de usar o caminho correto do seu arquivo de models
+                convite_pendente = Convite.query.filter_by(
+                    id_remetente=usuario_alvo.id_indicador,
+                    status_onboarding=False
+                ).first()
+
+                if convite_pendente:
+                    convite_pendente.status_onboarding = True
+                    convite_pendente.id_destinatario = usuario_alvo.id
+
+                    # SE ESTIVER NO BETA: O padrinho pode ganhar o selo pelos 10 convites
+                    if is_periodo_beta:
+                        padrinho = Usuario.query.get(usuario_alvo.id_indicador)
+                        if padrinho and padrinho.convites_aceitos >= 10 and not padrinho.is_pioneiro:
+                            padrinho.is_pioneiro = True
+                            print(
+                                f"🏆 MÉRITO BETA: O padrinho {padrinho.username} atingiu 10 convites e virou Pioneiro Vitalício!")
+                    else:
+                        print(
+                            f"Convite validado para estatísticas, mas Padrinho ID {usuario_alvo.id_indicador} não ganha selo (Fim do Beta).")
+
+            except Exception as e:
+                print(f"Erro ao processar validação de convite/padrinho: {e}")
+
+        # ---------------------------------------------------------------------
+        # SITUAÇÃO B: O Usuário é Orgânico (Não veio por convite)
+        # ---------------------------------------------------------------------
+        else:
+            # SE ESTIVER NO BETA: Verifica se bateu metas orgânicas (Ex: 10 conexões próprias)
+            if is_periodo_beta:
+                ganhou_por_esforco_proprio = usuario_alvo.check_pioneiro_status()
+                if ganhou_por_esforço_proprio:
+                    print(
+                        f"✨ MÉRITO BETA: Usuário comum {usuario_alvo.username} atingiu os critérios orgânicos de Pioneiro!")
+            else:
+                print(f"🔐 Acesso Liberado: Usuário orgânico {usuario_alvo.username} promovido a Nível 10 (Pós-Beta).")
 
     # 4. REGRA PARA EMPREENDEDORES (Pioneiro PJ)
-    if novo_nivel == 999:
-        # Se for o caso, já marca como pioneiro automaticamente ou aplica validação de CNPJ
+    # Geralmente mantida ativa mesmo pós-beta, ou mude para 'if novo_nivel == 999 and is_periodo_beta:' se a regra sumir pós-beta
+    if novo_nivel == 999 and is_periodo_beta:
         usuario_alvo.is_pioneiro = True
 
-    return True
+    return True, "Nível updated com sucesso."
+
 
 def obter_signo(data):
     if not data:

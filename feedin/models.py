@@ -1,7 +1,7 @@
 from feedin import login_manager
 from datetime import datetime, timezone, timedelta
 from flask_login import UserMixin
-import hashlib
+import hashlib, uuid
 from feedin import database, app
 from sqlalchemy import func
 
@@ -113,7 +113,7 @@ class Usuario(database.Model, UserMixin):
 
     is_pioneiro = database.Column(database.Boolean, default=False)
     grupos_sociais = database.Column(database.String(255))
-    data_cadastro = database.Column(database.DateTime, default=datetime.now(timezone.utc))
+    data_cadastro = database.Column(database.DateTime, default=lambda: datetime.now(timezone.utc))
     id_indicador = database.Column(database.Integer)
     aceite_lgpd = database.Column(database.Boolean, default=False, nullable=False)
 
@@ -575,7 +575,6 @@ class VinculoUsuarioLocal(database.Model):
 
 
 # Convites via WhatsApp
-# Convites via WhatsApp
 class Convite(database.Model):
     __tablename__ = 'convites'
     __table_args__ = {'extend_existing': True}
@@ -599,8 +598,6 @@ class Convite(database.Model):
     data_disparo = database.Column(database.DateTime, default=lambda: datetime.now(timezone.utc))
     status_onboarding = database.Column(database.Boolean, default=False)
 
-
-import uuid
 
 class ConviteAdmin(database.Model):
     __tablename__ = 'convite_admin'
