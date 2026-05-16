@@ -101,15 +101,14 @@
                     {% if not usuario_segue %}
                         {# BOTÃO PARA SEGUIR (PREENCHIDO) #}
                         <button type="button"
-                                onclick="prepararSeguirDireto('{{ local.id }}', '{{ local.nome }}')"
+                                onclick="prepararSeguirDireto('{{ local.id }}', '{{ local.nome }}', event)"
                                 class="btn btn-light btn-lg rounded-pill px-4 shadow fw-bold text-primary">
                             <i class="fas fa-plus me-2"></i>Seguir Local
                         </button>
                     {% else %}
                         {# BOTÃO "VAZADO" (SEGUINDO) #}
-                        {# Removi o 'disabled' para que o usuário possa clicar e DEIXAR de seguir (Toggle) #}
                         <button type="button"
-                                onclick="prepararSeguirDireto('{{ local.id }}', '{{ local.nome }}')"
+                                onclick="prepararSeguirDireto('{{ local.id }}', '{{ local.nome }}', event)"
                                 class="btn btn-outline-light btn-lg rounded-pill px-4 fw-bold">
                             <i class="fas fa-check me-2"></i>Seguindo
                         </button>
@@ -124,7 +123,27 @@
 <div class="container mt-4">
     <div class="row">
         <div class="col-lg-8">
-            <h4 class="fw-bold text-secondary mb-4">Linha do Tempo</h4>
+
+            {# PAINEL CONTADOR E EXPLICATIVO DIDÁTICO #}
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h4 class="fw-bold text-secondary mb-0">Linha do Tempo</h4>
+                    <small class="text-muted">
+                        Exibindo <strong>{{ atividades|length }}</strong> de <strong>{{ total_atividades if total_atividades is defined else atividades|length }}</strong> histórias deste local.
+                    </small>
+                </div>
+
+                {# Informa educadamente se houver publicações que pertencem ao local, mas exigem tags de subgrupo #}
+                {% if total_atividades is defined and atividades|length < total_atividades %}
+                    <span class="badge bg-light text-secondary border shadow-sm p-2"
+                          style="font-size: 0.75rem; max-width: 320px; white-space: normal; text-align: left;"
+                          title="Algumas histórias contadas aqui foram direcionadas a subgrupos de interesses específicos que você não possui no seu perfil.">
+                        <i class="bi bi-info-circle-fill text-warning me-1"></i>
+                        Há publicações direcionadas ocultas.
+                    </span>
+                {% endif %}
+            </div>
+
             {% for item in atividades %}
                 {% if item.tipo_card != 'conexao' %}
                     {% with atividade = item, context_origem = 'perfil_local' %}
@@ -169,6 +188,30 @@
                 </div>
             </div>
         </div>
+{# MODAL DE EDIÇÃO DE POSTAGEM #}
+<div class="modal fade" id="modalEditarPost" tabindex="-1" aria-labelledby="modalEditarPostLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold text-secondary" id="modalEditarPostLabel">Editar sua História</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="formEditarPost" method="POST" action="">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="inputConteudoPost" class="form-label small text-muted">Sua memória:</label>
+                        <textarea class="form-control rounded-3" id="inputConteudoPost" name="conteudo" rows="4" required></textarea>
+                    </div>
+                </div>
+                <div class="modal-header border-0 pt-0 d-flex justify-content-end gap-2">
+                    <button type="button" class="btn btn-sm btn-light rounded-pill px-3" data-bs-toggle="disabled" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-sm btn-primary rounded-pill px-4 fw-bold">Salvar Alterações</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
     </div>
 </div>
 
@@ -313,26 +356,36 @@ function enviarAvaliacaoCompleta() {
 }
 
 function cancelarAvaliacao() {
-    $('#feedback-container').fadeOut(() => { location.reload(); });
+    $('#feedback-container').fadeOut(); // Apenas esconde, sem recarregar a página do nada
+}
+
+function colocarEmModoEspera() {
+    $('#feedback-container').fadeOut();
 }
 
 /**
  * LÓGICA DE SEGUIR LOCAL
+ * Passagem explícita de 'evt' para evitar quebras em navegadores restritivos
  */
-function prepararSeguirDireto(localId, localNome) {
-    const $btn = $(event.currentTarget);
+function prepararSeguirDireto(localId, localNome, evt) {
+    if (evt) evt.preventDefault();
 
     $.ajax({
         url: "/seguir_local/" + localId,
         method: 'POST',
-        data: { csrf_token: "{{ csrf_token() }}" },
+        data: {
+            csrf_token: "{{ csrf_token() }}" || $('input[name=csrf_token]').val()
+        },
         success: function(response) {
-            if (response.status === "success") {
-                location.reload(); // Recarrega para atualizar o contador e o botão
+            if (response.status === "success" || response.sucesso) {
+                window.location.reload();
+            } else {
+                alert("Aviso: " + (response.message || "Não foi possível alterar o vínculo."));
             }
         },
-        error: function() {
-            alert("Erro ao processar vínculo com o local.");
+        error: function(xhr) {
+            console.error("Erro no Ajax de seguir:", xhr.responseText);
+            alert("Erro de comunicação com o servidor ao tentar seguir o local.");
         }
     });
 }

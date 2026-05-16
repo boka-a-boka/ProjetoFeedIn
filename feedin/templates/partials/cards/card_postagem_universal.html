@@ -85,14 +85,26 @@
                 </div>
             {% endif %}
 
-            {# LINHA 2: TAGS DE AFINIDADE #}
-            {% if post_obj and post_obj.tags_afinidade %}
-                <div class="mt-2 border-top pt-2" style="border-top-style: dotted !important; opacity: 0.6;">
-                    <div class="d-flex flex-wrap gap-2">
-                        {% for tag in post_obj.tags_afinidade %}
-                            <span class="fw-normal" style="font-size: 0.65rem; color: #0d6efd;">
-                                #{{ tag.nome.replace(' ', '') }}
-                            </span>
+            {# LINHA 2: TAGS DE AFINIDADE (Sincronizado com a @property tags e formatado com didática visual) #}
+            {% if post_obj and post_obj.tags %}
+                <div class="mt-2 border-top pt-2" style="border-top-style: dotted !important; opacity: 0.9;">
+                    <div class="d-flex flex-wrap gap-1">
+                        {% for tag in post_obj.tags %}
+                            {# Verifica se o visitante segue essa tag específica para pintar as chaves #}
+                            {% if meus_interesses_ids and tag.id in meus_interesses_ids %}
+                                {# Tag de Afinidade Positiva (Azul - Justificou a exibição) #}
+                                <span class="badge bg-primary rounded-pill px-2 py-1 shadow-xs"
+                                      style="font-size: 0.68rem; font-weight: 700; letter-spacing: 0.3px;">
+                                    <i class="bi bi-bookmark-check-fill me-1"></i>#{{ tag.nome.replace(' ', '') }}
+                                </span>
+                            {% else %}
+                                {# Tag Direcionada Oculta (Cinza Fosco - Educativa/Incentivadora) #}
+                                <span class="badge bg-light text-muted rounded-pill px-2 py-1 border text-secondary"
+                                      style="font-size: 0.68rem; font-weight: 600; opacity: 0.65; border-color: #dee2e6 !important;"
+                                      title="Você não segue esta tag. Esta publicação ficou visível para você devido ao vínculo deste Local ou Conexão direta.">
+                                    <i class="bi bi-eye-slash me-1"></i>#{{ tag.nome.replace(' ', '') }}
+                                </span>
+                            {% endif %}
                         {% endfor %}
                     </div>
                 </div>
@@ -116,9 +128,68 @@
                 {% endif %}
             </div>
 
+            <!-- BOTÕES DE GERENCIAMENTO (EDITAR / EXCLUIR) -->
+            {% if current_user.is_authenticated and atividade.id_usuario == current_user.id %}
+            <div class="dropdown ms-auto">
+                <button class="btn btn-link text-muted p-0 lh-1" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-three-dots-vertical fs-5"></i>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end shadow border-0 rounded-3">
+                    <!-- Editar (Abre um Modal) -->
+                    <li>
+                        <!-- Adicionamos data-bs-toggle e data-bs-target para o HTML abrir o modal sozinho -->
+                        <button class="dropdown-item py-2" type="button"
+                                data-bs-toggle="modal"
+                                data-bs-target="#modalEditarPost"
+                                onclick="preencherDadosModalEditar('{{ atividade.id }}', '{{ atividade.conteudo|e }}')">
+                            <i class="bi bi-pencil me-2 text-primary"></i> Editar História
+                        </button>
+                    </li>
+                    <!-- Divisor -->
+                    <li><hr class="dropdown-divider"></li>
+                    <!-- Excluir (Dispara o Form por segurança) -->
+                    <li>
+                        <button class="dropdown-item py-2 text-danger" type="button" onclick="confirmarExclusaoPost('{{ atividade.id }}')">
+                            <i class="bi bi-trash3 me-2"></i> Excluir Memória
+                        </button>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Formulário Invisível para Exclusão Segura via POST -->
+            <form id="form-excluir-{{ atividade.id }}" action="{{ url_for('excluir_post', post_id=atividade.id) }}" method="POST" style="display: none;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            </form>
+            {% endif %}
+
             <div class="d-flex align-items-center gap-3">
                 {% include "partials/cards/_footer_reacoes.html" %}
             </div>
         </div>
     </div>
 </div>
+
+<script>
+window.preencherDadosModalEditar = function(postId, conteudoAtual) {
+    const formEditar = document.getElementById('formEditarPost');
+    const inputConteudo = document.getElementById('inputConteudoPost');
+
+    if (formEditar && inputConteudo) {
+        // Redireciona o form para a rota certa com o ID do post
+        formEditar.action = "/editar_post/" + postId;
+
+        // Coloca o texto antigo dentro da caixinha de texto
+        inputConteudo.value = conteudoAtual;
+    } else {
+        console.error("Erro: Elementos do formulário de edição não encontrados na página.");
+    }
+};
+
+// Mantém a exclusão que já está funcionando 100%
+window.confirmarExclusaoPost = function(postId) {
+    if (confirm("Tem certeza que deseja remover esta história permanentemente? Esta ação não poderá ser desfeita.")) {
+        const formExcluir = document.getElementById('form-excluir-' + postId);
+        if (formExcluir) formExcluir.submit();
+    }
+};
+</script>

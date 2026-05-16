@@ -717,6 +717,11 @@ class Postagem(database.Model):
         # Aqui contamos as interações do tipo 'nao_curti'
         return PostagemInteracao.query.filter_by(id_postagem=self.id, tipo='nao_curti').count()
 
+    @property
+    def tags(self):
+        """Apelido para tags_afinidade para facilitar o uso nos templates e rotas"""
+        return self.tags_afinidade
+
     def usuario_ja_deu_nao_curti(self, user_id):
         # CRITICAL: Certifique-se de filtrar pelo tipo='nao_curti'
         return PostagemInteracao.query.filter_by(id_postagem=self.id, id_usuario=user_id,

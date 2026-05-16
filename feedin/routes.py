@@ -21,7 +21,6 @@ from sqlalchemy import or_, func, asc, and_, not_
 from sqlalchemy.orm import joinedload
 from cryptography.fernet import Fernet  # Para criptografia reversível
 from PIL import Image, ImageOps
-
 import secrets, os, re, io, csv, json, pytz, uuid
 
 mail = Mail(app)
@@ -1347,7 +1346,7 @@ def aceitar_conexao(conexao_id):
 
     # 2. Muda o status para 'aceito'
     conexao.status = 'aceito'
-    conexao.data_confirmacao = datetime.utcnow()
+    conexao.data_aceite = datetime.utcnow()  # <--- Alinhado com a sua Model!
 
     # 3. CRIA A MEMÓRIA SOCIAL (O que vai para o Feed)
     # É aqui que a mágica acontece para o seu layout bonitinho
@@ -1724,8 +1723,18 @@ def admin_novo_local():
 
 def obter_atividades_feed(usuario):
     try:
-        # O "Marco Zero" do usuário no sistema
+        from datetime import timezone
+        # =========================================================================
+        # 0. DECLARAÇÃO DE VARIÁVEIS NO TOPO (EVITA ERROS DE ESCOPO)
+        # =========================================================================
         data_nascimento_sistema = usuario.data_cadastro
+        meus_interesses_ids = [t.id for t in usuario.interesses]
+
+        memorias_locais = [m.local_id for m in VinculoUsuarioLocal.query.filter_by(usuario_id=usuario.id).all()]
+        grupos_ids = [m.id_grupo for m in MembroGrupo.query.filter_by(id_usuario=usuario.id).all()]
+        locais_negocio = [l.id for l in Local.query.filter(
+            (Local.id_empreendedor == usuario.id) | (Local.id_indicador == usuario.id)).all()]
+        meus_locais_ids = list(set(memorias_locais + grupos_ids + locais_negocio))
 
         # 1. Pegar conexões aceitas
         conexoes = Conexoes.query.filter(
@@ -1736,46 +1745,112 @@ def obter_atividades_feed(usuario):
         mapa_amigos = {}
         for c in conexoes:
             amigo_id = c.id_destinatario if c.id_remetente == usuario.id else c.id_remetente
-            mapa_amigos[amigo_id] = c.data_aceite
+            mapa_amigos[amigo_id] = c.data_solicitacao  # Usando a data de solicitação como marco zero real
 
-        # 2. Filtros de MEMÓRIAS
+        # --- SEU PRINT DE DEBUG MANUAL (SEGURO NO ESCOPO) ---
+        print("\n=== DEBUG: MAPEAMENTO DE AMIGOS E DATAS ===")
+        for amigo_id, data_corte in mapa_amigos.items():
+            print(f"-> Amigo ID: {amigo_id} | data_corte vinda do banco: {data_corte} | Tipo: {type(data_corte)}")
+        print(f"-> Seus Interesses (Tags): {meus_interesses_ids}")
+        print(f"-> Seus Locais Cadastrados: {meus_locais_ids}")
+        print("===========================================\n")
+
+        # 2. Filtros de MEMÓRIAS (Usando as variáveis já declaradas)
         filtros_memorias = [Memoria.id_usuario == usuario.id]
         for amigo_id, data_corte in mapa_amigos.items():
             if data_corte:
+                if data_corte.tzinfo is None:
+                    data_corte = data_corte.replace(tzinfo=timezone.utc)
                 filtros_memorias.append(and_(Memoria.id_usuario == amigo_id, Memoria.data_criacao >= data_corte))
         filtros_memorias.append(and_(Memoria.privacidade == 'publico', Memoria.data_criacao >= data_nascimento_sistema))
 
-        # 3. Filtros de POSTAGENS
-        filtros_postagens = [Postagem.id_usuario == usuario.id]
+        # =========================================================================
+        # 3. FILTROS DE POSTAGENS - REGRA DE SOBERANIA DAS TAGS
+        # =========================================================================
+        meus_interesses_ids = [t.id for t in usuario.interesses]
+        lista_amigos_ids = [int(id_amigo) for id_amigo in mapa_amigos.keys()]
+
+        condicoes_amigos = []
         for amigo_id, data_corte in mapa_amigos.items():
             if data_corte:
-                filtros_postagens.append(and_(Postagem.id_usuario == amigo_id, Postagem.data_criacao >= data_corte))
+                if data_corte.tzinfo is None:
+                    data_corte = data_corte.replace(tzinfo=timezone.utc)
 
-        # 4. Execução das Queries
+                # --- REGRA 1: POSTAGENS SEM TAG (Porteira Aberta) ---
+                # Passa se for post geral do amigo OU se for em um local seu, desde que NÃO tenha tag
+                post_sem_tag = and_(
+                    ~Postagem.tags_afinidade.any(),
+                    or_(
+                        Postagem.id_local == None,
+                        Postagem.id_local.in_(meus_locais_ids) if meus_locais_ids else False
+                    )
+                )
+
+                # --- REGRA 2: POSTAGENS COM TAG (Peneira Restritiva) ---
+                # Se a publicação tiver tag, ela OBRIGATORIAMENTE precisa bater com seus interesses
+                post_com_tag = and_(
+                    Postagem.tags_afinidade.any(),
+                    Postagem.tags_afinidade.any(Taxonomia.id.in_(meus_interesses_ids)) if meus_interesses_ids else False
+                )
+
+                # Unificação para o Amigo: Respeita a data de corte E cai em uma das duas regras acima
+                regra_amigo_completa = and_(
+                    Postagem.id_usuario == int(amigo_id),
+                    Postagem.data_criacao >= data_corte,
+                    or_(post_sem_tag, post_com_tag)
+                )
+                condicoes_amigos.append(regra_amigo_completa)
+
+        # Montamos a estrutura base do OR principal
+        regras_or_postagens = [
+            Postagem.id_usuario == usuario.id  # Minhas próprias postagens sempre aparecem
+        ]
+
+        if condicoes_amigos:
+            regras_or_postagens.append(or_(*condicoes_amigos))
+
+        # Critério Global de Interesses (Apenas para quem NÃO é meu amigo)
+        # Segue a mesma soberania: se tem tag, exige afinidade
+        if meus_interesses_ids:
+            condicao_nao_ser_amigo = ~Postagem.id_usuario.in_(lista_amigos_ids) if lista_amigos_ids else True
+
+            regras_or_postagens.append(and_(
+                Postagem.tags_afinidade.any(Taxonomia.id.in_(meus_interesses_ids)),
+                Postagem.data_criacao >= data_nascimento_sistema,
+                condicao_nao_ser_amigo
+            ))
+        # =========================================================================
+
+        # 4. Execução das Queries (COM CAPTURA DO RAIO-X)
         lista_memorias = Memoria.query.options(
             joinedload(Memoria.autor),
             joinedload(Memoria.local)
         ).filter(or_(*filtros_memorias)).all()
 
-        lista_postagens = Postagem.query.options(
+        query_postagens = Postagem.query.options(
             joinedload(Postagem.autor)
         ).filter(
             (Postagem.ativo == True) &
-            (or_(*filtros_postagens))
-        ).all()
+            (or_(*regras_or_postagens))
+        )
+
+        # --- O SEU RAIO-X DO SQL NO TERMINAL ---
+        print("\n=== RAIO-X: SQL GERADO PELO SQLALCHEMY ===")
+        print(query_postagens)
+        print("===========================================\n")
+
+        lista_postagens = query_postagens.all()
 
         # 5. Unificação e Normalização
         todas_atividades = list(lista_memorias) + list(lista_postagens)
 
         for item in todas_atividades:
-            # Foto básica
             item.url_foto_autor = url_for('servir_foto_perfil', usuario_id=item.id_usuario)
 
             if isinstance(item, Memoria):
                 item.tipo = 'memoria'
                 item.local_foco = item.local
                 item.autor_objeto = item.autor
-                # Blindagem de métodos para o footer
                 setattr(item, 'usuario_ja_curtiu', item.usuario_ja_curtiu_memoria)
                 setattr(item, 'total_curtidas', item.total_curtidas_memoria)
 
@@ -1783,7 +1858,6 @@ def obter_atividades_feed(usuario):
                 item.tipo = 'postagem'
                 item.local_foco = getattr(item, 'local', None)
                 item.autor_objeto = getattr(item, 'autor', None) or getattr(item, 'usuario', None)
-                # Funções de fallback seguras
                 if not hasattr(item, 'usuario_ja_curtiu'):
                     setattr(item, 'usuario_ja_curtiu', lambda x: False)
                 if not hasattr(item, 'total_curtidas'):
@@ -1795,8 +1869,7 @@ def obter_atividades_feed(usuario):
 
     except Exception as e:
         print(f"Erro no feed: {e}")
-        return [] # Se der qualquer erro, retorna lista vazia para o HTML não explodir
-
+        return []
 
 @app.route("/cadastrar_preferencias")
 @login_required
@@ -2272,7 +2345,7 @@ def feed():
     atividades_recentes = obter_atividades_feed(current_user)
 
     # 4. Renderização com todas as variáveis "vivas"
-    return render_template("homepage.html",  
+    return render_template("homepage.html",
                            aba=aba,
                            atividades_recentes=atividades_recentes,
                            sugestoes=sugestoes,
@@ -2868,8 +2941,10 @@ def configuracoes():
 def ver_perfil(usuario_id):
     user_alvo = Usuario.query.get_or_404(usuario_id)
     e_o_proprio = (current_user.id == user_alvo.id)
+
     # Chamada dedicada à lógica de locais populares do usuário
     locais_seguidos = Local.get_locais_populares_por_usuario(user_alvo.id)
+
     relacao = Conexoes.query.filter(
         ((Conexoes.id_remetente == current_user.id) & (Conexoes.id_destinatario == user_alvo.id)) |
         ((Conexoes.id_remetente == user_alvo.id) & (Conexoes.id_destinatario == current_user.id))
@@ -2877,6 +2952,7 @@ def ver_perfil(usuario_id):
 
     status_conexao = relacao.status if relacao else "nenhuma"
     sou_remetente = (relacao.id_remetente == current_user.id) if relacao else False
+
     # 1. Memórias (Vínculos Usuario-Local antigos)
     memorias_alvo = VinculoUsuarioLocal.query.filter_by(usuario_id=usuario_id).order_by(
         VinculoUsuarioLocal.id.desc()).all()
@@ -2902,7 +2978,14 @@ def ver_perfil(usuario_id):
     # 4. Afinidades (Tags e Locais em comum)
     minhas_tags_ids = [t.id for t in current_user.interesses]
     tags_em_comum = [t for t in user_alvo.interesses if t.id in minhas_tags_ids]
-    meus_locais_ids = [m.local_id for m in VinculoUsuarioLocal.query.filter_by(usuario_id=current_user.id).all()]
+
+    # Mapeamento completo dos locais do VISITANTE (Frequenta, gerencia ou indica)
+    memorias_locais_vis = [m.local_id for m in VinculoUsuarioLocal.query.filter_by(usuario_id=current_user.id).all()]
+    grupos_ids_vis = [m.id_grupo for m in MembroGrupo.query.filter_by(id_usuario=current_user.id).all()]
+    locais_negocio_vis = [l.id for l in Local.query.filter(
+        (Local.id_empreendedor == current_user.id) | (Local.id_indicador == current_user.id)).all()]
+    meus_locais_ids = list(set(memorias_locais_vis + grupos_ids_vis + locais_negocio_vis))
+
     locais_alvo_ids = [m.local_id for m in memorias_alvo]
     locais_comum_ids = set(meus_locais_ids) & set(locais_alvo_ids)
 
@@ -2912,14 +2995,43 @@ def ver_perfil(usuario_id):
         res = obter_signo(user_alvo.perfil.data_nascimento)
         s_nome, s_icone = res if res else (None, None)
 
-    # --- NOVO BLOCO: O MURAL DE POSTAGENS ---
+    # =========================================================================
+    # 6. MOTOR DO MURAL DE POSTAGENS (CORRIGIDO E SEGURO)
+    # =========================================================================
+    # Guardamos o total bruto para estatísticas do perfil
+    total_mural_bruto = Postagem.query.filter_by(id_usuario=usuario_id, ativo=True).count()
 
-    # A. Postagens que o USER_ALVO CRIOU (Suas próprias memórias)
-    mural_postagens = Postagem.query.filter_by(id_usuario=usuario_id, ativo=True) \
-        .order_by(Postagem.data_criacao.desc()).all()
+    if e_o_proprio:
+        # Dono do perfil tem passe livre total sobre suas publicações
+        postagens_permitidas = Postagem.query.options(joinedload(Postagem.autor)) \
+            .filter_by(id_usuario=usuario_id, ativo=True) \
+            .order_by(Postagem.data_criacao.desc()).all()
+    else:
+        # Filtros de restrição baseados nas regras de negócio do visitante
+        # Regra A: Post sem Tag (Porteira aberta se for geral ou local vinculado)
+        post_sem_tag = and_(
+            ~Postagem.tags_afinidade.any(),
+            or_(
+                Postagem.id_local == None,
+                Postagem.id_local.in_(meus_locais_ids) if meus_locais_ids else False
+            )
+        )
 
-    # B. Postagens onde o USER_ALVO FOI MARCADO (Fotos com ele)
-    # Usamos o relacionamento 'pessoas_marcadas' que você adicionou ao Model
+        # Regra B: Post com Tag (Peneira restritiva de subgrupos direcionados)
+        post_com_tag = and_(
+            Postagem.tags_afinidade.any(),
+            Postagem.tags_afinidade.any(Taxonomia.id.in_(minhas_tags_ids)) if minhas_tags_ids else False
+        )
+
+        # Execução da query com os filtros combinados direto no banco
+        postagens_permitidas = Postagem.query.options(joinedload(Postagem.autor)).filter(
+            Postagem.id_usuario == usuario_id,
+            Postagem.ativo == True,
+            or_(post_sem_tag, post_com_tag)
+        ).order_by(Postagem.data_criacao.desc()).all()
+    # =========================================================================
+
+    # 7. Postagens onde o USER_ALVO FOI MARCADO (Fotos com ele - Fora do bloco do signo)
     fotos_com_alvo = Postagem.query.join(Postagem.pessoas_marcadas) \
         .filter(Usuario.id == usuario_id, Postagem.ativo == True) \
         .order_by(Postagem.data_criacao.desc()).all()
@@ -2931,12 +3043,14 @@ def ver_perfil(usuario_id):
                            status_conexao=status_conexao,
                            sou_remetente=sou_remetente,
                            e_o_proprio=e_o_proprio,
-                           postagens=mural_postagens,  # Postagens autorais
-                           fotos_com_voce=fotos_com_alvo,  # Postagens de terceiros onde ele aparece
+                           postagens=postagens_permitidas,
+                           total_postagens=total_mural_bruto,
+                           fotos_com_voce=fotos_com_alvo,
                            memorias=memorias_alvo,
                            conexao=conexao_atual,
                            conexoes_confirmadas=conexoes_confirmadas,
                            tags_comum_ids=[t.id for t in tags_em_comum],
+                           meus_interesses_ids=set(minhas_tags_ids),
                            locais_comum_ids=locais_comum_ids,
                            locais_seguidos=locais_seguidos,
                            signo_nome=s_nome,
@@ -3015,7 +3129,7 @@ def perfil_local(local_id):
                            rating_data=local.get_rating_data())
 
 
-@app.route('/local_v2/<int:local_id>') # Use este endpoint para validar
+@app.route('/local_v2/<int:local_id>')
 @login_required
 def perfil_local_v2(local_id):
     local = Local.query.get_or_404(local_id)
@@ -3023,13 +3137,14 @@ def perfil_local_v2(local_id):
     # 1. GARANTIA DE VARIÁVEIS
     usuario_segue = False
     atividades_formatadas = []
+    minhas_tags_ids = [t.id for t in current_user.interesses]
 
-    # 2. VERIFICAÇÃO DE VÍNCULO (Simplificado para performance)
+    # 2. VERIFICAÇÃO DE VÍNCULO
     usuario_segue = database.session.query(VinculoUsuarioLocal).filter_by(
         usuario_id=current_user.id, local_id=local_id
     ).first() is not None
 
-    # 3. TAGS DOS AMIGOS (Mantendo sua lógica original de Piracicaba)
+    # 3. TAGS DOS AMIGOS
     tags_dos_amigos = []
     try:
         lista_ids_amigos = [amigo.id for amigo in current_user.amigos]
@@ -3042,49 +3157,69 @@ def perfil_local_v2(local_id):
     except Exception as e:
         print(f"Erro tags: {e}")
 
-    # 4. BUSCA E NORMALIZAÇÃO DE POSTAGENS (Onde o card universal bebe)
-    postagens_publicas = Postagem.query.filter_by(id_local=local_id, ativo=True) \
-        .options(joinedload(Postagem.autor).joinedload(Usuario.perfil)) \
-        .order_by(Postagem.data_criacao.desc()).all()
+    # =========================================================================
+    # 4. MOTOR DE POSTAGENS (O REAL MURAL DE HISTÓRIAS) - CORRIGIDO e ALINHADO
+    # =========================================================================
+    # Buscamos explicitamente os IDs das tags convertendo a query dinâmica em lista
+    minhas_tags_ids = [t.id for t in current_user.interesses.all()]
 
-    for p in postagens_publicas:
+    # Query base: Postagens ATIVAS deste local específico
+    query_base_posts = Postagem.query.filter_by(id_local=local_id, ativo=True)
+
+    # 1. TOTAL BRUTO DE POSTS REAIS DO LOCAL NO BANCO (Sem filtros de afinidade)
+    total_posts_existentes = query_base_posts.count()
+
+    # 2. SELEÇÃO DE POSTS COM FILTRO DE AFINIDADE (Garantindo que não duplique)
+    postagens_permitidas = []
+
+    # Buscamos todas as postagens ativas do local trazendo as tags em conjunto (Evita Lazy Loading)
+    todas_do_local = query_base_posts.options(
+        joinedload(Postagem.autor).joinedload(Usuario.perfil),
+        joinedload(Postagem.tags_afinidade)
+    ).all()
+
+    for p in todas_do_local:
+        # Se o post não tem nenhuma tag de afinidade, ele é público para todos neste local
+        if not p.tags_afinidade:
+            postagens_permitidas.append(p)
+        else:
+            # Se o post tem tags, checamos se o usuário possui pelo menos UMA delas
+            post_tags_ids = {tag.id for tag in p.tags_afinidade}
+            if post_tags_ids.intersection(minhas_tags_ids):
+                postagens_permitidas.append(p)
+
+    # 3. NORMALIZAÇÃO PARA A LINHA DO TEMPO (Apenas posts reais e filtrados)
+    for p in postagens_permitidas:
         atividades_formatadas.append({
             'id': p.id,
-            'tipo_card': 'postagem', # Para o card saber o estilo
+            'tipo_card': 'postagem',
             'data_criacao': p.data_criacao,
-            'autor_objeto': p.autor, # Casando com o card
+            'autor_objeto': p.autor,
             'conteudo_exibicao': p.conteudo,
-            'imagem_url': p.imagem_url, # Necessário para exibir a foto
-            'objeto_original': p, # Para os métodos de curtir/comentar
+            'imagem_url': p.imagem_url,
+            'objeto_original': p,
             'id_local': local.id,
-            'local': local # Objeto completo para o card pegar o nome
+            'local': local
         })
 
-    # 5. BUSCA E NORMALIZAÇÃO DE VÍNCULOS (O Lado Festivo/Resgate)
-    # Aqui usamos as 'atividades' que o seu HTML já exibe na lateral
-    if local.atividades:
-        for ativ in local.atividades:
-            atividades_formatadas.append({
-                'id': ativ.id,
-                'tipo_card': 'conexao', # Aciona o "Banner de Celebração" no card
-                'data_criacao': ativ.data_criacao,
-                'autor_objeto': ativ.criador, # Casando com o card
-                'descricao': ativ.descricao, # Casando com o card
-                'periodo_estimado': ativ.periodo_estimado, # Casando com o card
-                'conteudo_exibicao': ativ.descricao or "Resgatou uma memória.",
-                'id_local_vinc': local.id, # Para a lógica de borda do card
-                'objeto_original': ativ
-            })
-
-    # 6. UNIFICAÇÃO E ORDENAÇÃO
+    # Ordenação cronológica reversa
     atividades_ordenadas = sorted(atividades_formatadas, key=lambda x: x['data_criacao'], reverse=True)
 
-    return render_template('locais/perfil_local.html', # CONSUMINDO SEU HTML ORIGINAL
+    # PRINTS DE DEBUG PARA MONITORAR NO SEU TERMINAL:
+    print("\n=== DEBUG DE INTERESSES E POSTAGENS ===")
+    print(f"IDs das minhas tags ativas: {minhas_tags_ids}")
+    print(f"Total bruto de posts físicos no banco para este local: {total_posts_existentes}")
+    print(f"Total de posts que passaram no filtro de afinidade: {len(atividades_ordenadas)}")
+    print("=======================================\n")
+
+    return render_template('locais/perfil_local.html',
                            local=local,
-                           atividades=atividades_ordenadas,
+                           atividades=atividades_ordenadas,  # Envia apenas o que deve ser exibido
+                           total_atividades=total_posts_existentes,  # O "Y" real da matemática (Total Bruto)
                            sugestoes_nicho=tags_dos_amigos,
                            usuario_segue=usuario_segue,
-                           rating_data=local.get_rating_data())
+                           rating_data=local.get_rating_data(),
+                           meus_interesses_ids=set(minhas_tags_ids))
 
 
 @app.route("/explorar-locais")
@@ -3343,19 +3478,32 @@ def criar_postagem():
     return redirect(request.referrer)
 
 
-@app.route('/editar_post/<int:post_id>', methods=['POST'])
+@app.route("/editar_post/<int:post_id>", methods=['POST'])
 @login_required
 def editar_post(post_id):
     post = Postagem.query.get_or_404(post_id)
 
-    # Uso do método de conveniência que você já tem no Model!
-    if not post.pode_gerenciar(current_user.id):
+    # 1. Validação de segurança (que corrigimos no passo anterior)
+    if post.id_usuario != current_user.id:
         flash("Ação não permitida.", "danger")
         return redirect(request.referrer)
 
-    post.conteudo = request.form.get('conteudo')
-    database.session.commit()
-    flash("Postagem atualizada.", "success")
+    # 2. Captura do novo conteúdo vindo do formulário
+    # O textarea no HTML tem o atributo name="conteudo"
+    novo_conteudo = request.form.get('conteudo')
+
+    if novo_conteudo:
+        post.conteudo = novo_conteudo.strip()  # Atualiza o campo do objeto
+
+        try:
+            database.session.commit()  # 3. Salva no banco de dados
+            flash("História atualizada com sucesso!", "success")
+        except Exception as e:
+            database.session.rollback()
+            flash("Erro ao salvar as alterações.", "danger")
+    else:
+        flash("O conteúdo não pode ficar vazio.", "warning")
+
     return redirect(request.referrer)
 
 
@@ -3364,7 +3512,8 @@ def editar_post(post_id):
 def excluir_post(post_id):
     post = Postagem.query.get_or_404(post_id)
 
-    if not post.pode_gerenciar(current_user.id):
+    # Checagem direta antes de apagar o arquivo físico e o banco
+    if post.id_usuario != current_user.id:
         flash("Você não tem permissão para excluir esta postagem.", "danger")
         return redirect(request.referrer)
 

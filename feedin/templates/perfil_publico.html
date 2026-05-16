@@ -128,7 +128,7 @@
                     <span class="mx-2 opacity-50">•</span>
                     <span class="text-secondary">
                         <i class="bi bi-calendar3 me-1" style="font-size: 0.75rem;"></i>
-                        {{ user_alvo.perfil.data_nascimento.strftime('%m/%Y') }}
+                        {{ user_alvo.perfil.data_nascimento.strftime('%d/%m') }}
                     </span>
 
                     {% if signo_nome %}
@@ -239,7 +239,22 @@
 
             <div class="col-lg-6 col-12">
                 <div class="d-flex justify-content-between align-items-center mb-4">
-                    <h4 class="fw-bold mb-0">Memórias</h4>
+                    <div>
+                        <h4 class="fw-bold mb-0">Memórias</h4>
+                        <small class="text-muted">
+                            Exibindo <strong>{{ postagens|length }}</strong> de <strong>{{ total_postagens }}</strong> publicações.
+                        </small>
+                    </div>
+
+                    {# Se houver posts ocultos e não for o próprio dono, mostra o aviso didático #}
+                    {% if not e_o_proprio and postagens|length < total_postagens %}
+                        <span class="badge bg-light text-secondary border shadow-sm p-2"
+                              style="font-size: 0.75rem; max-width: 300px; white-space: normal; text-align: left;"
+                              title="Algumas publicações deste perfil estão direcionadas a subgrupos específicos de interesses que você ainda não segue.">
+                            <i class="bi bi-info-circle-fill text-warning me-1"></i>
+                            Existem posts direcionados que você não segue.
+                        </span>
+                    {% endif %}
                 </div>
 
                 <div id="mural-content" class="row g-4">
