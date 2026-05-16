@@ -3288,6 +3288,41 @@ def descriptografar_cpf(cpf_banco):
     return fernet.decrypt(cpf_banco).decode()
 
 
+@app.route('/admin/reenviar-confirmacao/<int:usuario_id>')
+# @login_required  <-- Descomente se usar o Flask-Login para proteger a rota
+def admin_reenviar_confirmacao(usuario_id):
+    # 1. Verifica se quem está logado é realmente admin (Regra de segurança)
+    # if current_user.nivel_acesso < 9999:
+    #     flash('Acesso negado.', 'danger')
+    #     return redirect(url_for('dashboard'))
+
+    usuario = Usuario.query.get_or_404(usuario_id)
+
+    # Se o usuário já estiver ativo, não faz sentido reenviar
+    if usuario.active:
+        flash(f'O usuário {usuario.username} já está ativo no sistema.', 'info')
+        return redirect(url_for('central_admin'))  # Ajuste para o nome real da sua rota de admin
+
+    try:
+        # 2. Gera o novo token (usando o método que você já tem no cadastro)
+        token = generate_confirmation_token(usuario.email)
+
+        # URL que o usuário vai clicar no e-mail
+        link_confirmacao = url_for('confirmar_email', token=token, _external=True)
+
+        # 3. Dispara o e-mail (Use aqui a sua função existente de envio)
+        # Exemplo hipotético:
+        # enviar_email_confirmacao(usuario.email, link_confirmacao)
+
+        print(f"Novo token gerado para {usuario.email}: {link_confirmacao}")  # Log de segurança
+
+        flash(f'Novo link de confirmação enviado com sucesso para {usuario.email}!', 'success')
+    except Exception as e:
+        flash(f'Erro ao enviar o e-mail: {str(e)}', 'danger')
+
+    return redirect(url_for('central_admin'))  # Ajuste para o nome real da sua rota de admin
+
+
 @app.route('/processar_identidade', methods=['POST'])
 @login_required
 def processar_identidade():

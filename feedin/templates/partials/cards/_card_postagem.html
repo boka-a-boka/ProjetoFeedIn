@@ -50,47 +50,43 @@
 {# 2. A MÁGICA DA DECISÃO #}
 
 {% if atividade.id_conexao and c %}
-    {# --- LAYOUT A: REDE FORTALECIDA (O Visual Festivo que você queria) --- #}
-    <div class="card border-0 shadow-sm rounded-4 mb-4"
-         style="background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%); border-left: 6px solid #0d6efd !important;">
-        <div class="card-body p-4 text-center">
+    {# --- LAYOUT A: REDE FORTALECIDA (Versão Slim, Discreta e Elegante) --- #}
+    <div class="card border-0 shadow-sm rounded-3 mb-3 bg-dark border-start border-primary border-3">
+        <div class="card-body p-2 px-3 d-flex align-items-center justify-content-between">
 
-{# Fotos em estilo 'Overlap' (Sobrepostas) - Ajustado para ser à prova de falhas #}
-            <div class="d-flex justify-content-center align-items-center mb-3">
-                {# Foto do Remetente #}
-                <div class="rounded-circle border border-3 border-white shadow-sm overflow-hidden" style="width: 55px; height: 55px; z-index: 5;">
-                    <img src="{{ url_for('servir_foto_perfil', usuario_id=c.id_remetente or c['id_remetente']) }}"
-                         class="w-100 h-100" style="object-fit: cover;"
+            <!-- Lado Esquerdo: Mini-avatares e Texto Corrido -->
+            <div class="d-flex align-items-center flex-grow-1 overflow-hidden me-2">
+                <!-- Mini Fotos Sobrepostas Bem Pequenas -->
+                <div class="d-flex align-items-center me-3" style="min-width: 50px; position: relative; height: 32px;">
+                    <img src="{{ url_for('servir_foto_perfil', usuario_id=c.id_remetente) }}"
+                         class="rounded-circle border border-2 border-dark"
+                         style="width: 28px; height: 28px; object-fit: cover; position: absolute; left: 0; z-index: 2;"
+                         onerror="this.src='/static/fotos_perfil/default.jpg'">
+
+                    <img src="{{ url_for('servir_foto_perfil', usuario_id=c.id_destinatario) }}"
+                         class="rounded-circle border border-2 border-dark"
+                         style="width: 28px; height: 28px; object-fit: cover; position: absolute; left: 16px; z-index: 1;"
                          onerror="this.src='/static/fotos_perfil/default.jpg'">
                 </div>
 
-                <div class="mx-n3 bg-white rounded-circle shadow-sm d-flex align-items-center justify-content-center" style="width: 32px; height: 32px; z-index: 10; border: 2px solid #0d6efd;">
-                    <i class="bi bi-link-45deg text-primary fw-bold"></i>
-                </div>
-
-                {# Foto do Destinatário #}
-                <div class="rounded-circle border border-3 border-white shadow-sm overflow-hidden" style="width: 55px; height: 55px; z-index: 5;">
-                    <img src="{{ url_for('servir_foto_perfil', usuario_id=c.id_destinatario or c['id_destinatario']) }}"
-                         class="w-100 h-100" style="object-fit: cover;"
-                         onerror="this.src='/static/fotos_perfil/default.jpg'">
+                <!-- Texto em uma linha só -->
+                <div class="text-truncate">
+                    <span class="text-light small">
+                        <strong class="text-white">@{{ c.remetente.username }}</strong>
+                        e
+                        <strong class="text-white">@{{ c.destinatario.username }}</strong>
+                        agora estão conectados na teia!
+                    </span>
                 </div>
             </div>
 
-            <h6 class="fw-bold text-dark mb-1">
-                {{ atividade.titulo or "Rede Fortalecida!" }}
-            </h6>
-
-            <p class="text-muted mb-0" style="font-size: 0.9rem;">
-                <strong>{{ c.remetente.username }}</strong>
-                {{ atividade.descricao or "estabeleceu um vínculo com" }}
-                <strong>{{ c.destinatario.username }}</strong>.
-            </p>
-
-            <div class="mt-3">
-                <span class="badge bg-primary-subtle text-primary rounded-pill px-3 fw-normal" style="font-size: 0.7rem;">
-                    <i class="bi bi-shield-check me-1"></i> Conexão Real
+            <!-- Lado Direito: Selo sutil -->
+            <div class="flex-shrink-0 d-none d-sm-block">
+                <span class="badge bg-primary-subtle text-primary rounded-pill fw-bold" style="font-size: 0.65rem; padding: 4px 8px;">
+                    <i class="bi bi-link-45deg"></i> Conexão
                 </span>
             </div>
+
         </div>
     </div>
 

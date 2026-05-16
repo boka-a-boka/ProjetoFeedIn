@@ -108,45 +108,62 @@
                                                 <th class="text-end pe-3">Ações</th>
                                             </tr>
                                         </thead>
-                                        <tbody>
-                                            {% for u in lista_usuarios %}
-                                            <tr class="user-row align-middle border-secondary">
-                                                <td class="ps-3">
-                                                    <strong>{{ u.username }}</strong><br>
-                                                    <small class="text-muted">{{ u.email }}</small>
-                                                </td>
-                                                <td><span class="badge bg-info">{{ u.nivel_acesso }}</span></td>
-                                                <td>
-                                                    {% if u.is_pioneiro %}
-                                                        <span class="badge bg-success text-white"><i class="fas fa-star"></i> Pioneiro</span>
-                                                    {% else %}
-                                                        <span class="badge border border-secondary text-muted">Comum</span>
-                                                    {% endif %}
-                                                </td>
-                                                <td class="text-end pe-3">
-                                                    <div class="btn-group">
-                                                        {% if not u.is_pioneiro %}
-                                                        <a href="{{ url_for('promover_pioneiro', usuario_id=u.id) }}" class="btn btn-sm btn-warning text-dark me-2 fw-bold">
-                                                            <i class="fas fa-medal"></i>
-                                                        </a>
-                                                        {% endif %}
+                                            <tbody>
+                                                {% for u in lista_usuarios %}
+                                                <tr class="user-row align-middle border-secondary">
+                                                    <td class="ps-3">
+                                                        <strong>{{ u.username }}</strong><br>
+                                                        <small class="text-muted">{{ u.email }}</small>
+                                                    </td>
+                                                    <td><span class="badge bg-info">{{ u.nivel_acesso }}</span></td>
+                                                    <!-- COLUNA STATUS (Corrigida para olhar o Nível 1 e com alto contraste) -->
+                                                        <td>
+                                                            {% if u.is_pioneiro %}
+                                                                <span class="badge bg-success text-white fw-bold"><i class="fas fa-star"></i> Pioneiro</span>
+                                                            {% elif u.nivel_acesso == 1 %}
+                                                                <!-- Vermelho vivo com ícone de alerta para destacar no fundo preto -->
+                                                                <span class="badge bg-danger text-white fw-bold" style="border: 1px solid #ff6b6b;">
+                                                                    <i class="fas fa-exclamation-triangle"></i> Inativo (Nível 1)
+                                                                </span>
+                                                            {% else %}
+                                                                <!-- Texto claro/cinza claro para dar contraste sobre o fundo escuro -->
+                                                                <span class="badge bg-secondary text-light border border-light-subtle">Comum</span>
+                                                            {% endif %}
+                                                        </td>
 
-                                                        <button type="button" class="btn btn-sm btn-outline-light dropdown-toggle" data-bs-toggle="dropdown">
-                                                            Nível
-                                                        </button>
-                                                        <ul class="dropdown-menu dropdown-menu-dark shadow">
-                                                            <li><a class="dropdown-item small" href="{{ url_for('mudar_nivel', id_alvo=u.id, novo_nivel=9999) }}">Admin (9999)</a></li>
-                                                            <li><a class="dropdown-item small" href="{{ url_for('mudar_nivel', id_alvo=u.id, novo_nivel=999) }}">Empreendedor (999)</a></li>
-                                                            <li><a class="dropdown-item small" href="{{ url_for('mudar_nivel', id_alvo=u.id, novo_nivel=100) }}">Cliente (100)</a></li>
-                                                            <li><hr class="dropdown-divider border-secondary"></li>
-                                                            <li><a class="dropdown-item small text-success" href="{{ url_for('mudar_nivel', id_alvo=u.id, novo_nivel=10) }}">Usuário (10)</a></li>
-                                                            <li><a class="dropdown-item small text-danger" href="{{ url_for('mudar_nivel', id_alvo=u.id, novo_nivel=0) }}">Banir (0)</a></li>
-                                                        </ul>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                            {% endfor %}
-                                        </tbody>
+                                                        <td class="text-end pe-3">
+                                                            <div class="btn-group">
+                                                                <!-- BOTÃO REENVIAR: Só aparece se o nível do usuário for igual a 1 -->
+                                                                {% if u.nivel_acesso == 1 %}
+                                                                <a href="{{ url_for('admin_reenviar_confirmacao', usuario_id=u.id) }}"
+                                                                   class="btn btn-sm btn-info text-dark me-2 fw-bold"
+                                                                   title="Reenviar e-mail de confirmação">
+                                                                    <i class="fas fa-paper-plane"></i> Reenviar Link
+                                                                </a>
+                                                                {% endif %}
+
+                                                                {% if not u.is_pioneiro %}
+                                                                <a href="{{ url_for('promover_pioneiro', usuario_id=u.id) }}" class="btn btn-sm btn-warning text-dark me-2 fw-bold">
+                                                                    <i class="fas fa-medal"></i>
+                                                                </a>
+                                                                {% endif %}
+
+                                                                <button type="button" class="btn btn-sm btn-outline-light dropdown-toggle" data-bs-toggle="dropdown">
+                                                                    Nível
+                                                                </button>
+                                                                <ul class="dropdown-menu dropdown-menu-dark shadow">
+                                                                    <li><a class="dropdown-item small" href="{{ url_for('mudar_nivel', id_alvo=u.id, novo_nivel=9999) }}">Admin (9999)</a></li>
+                                                                    <li><a class="dropdown-item small" href="{{ url_for('mudar_nivel', id_alvo=u.id, novo_nivel=999) }}">Empreendedor (999)</a></li>
+                                                                    <li><a class="dropdown-item small" href="{{ url_for('mudar_nivel', id_alvo=u.id, novo_nivel=100) }}">Cliente (100)</a></li>
+                                                                    <li><hr class="dropdown-divider border-secondary"></li>
+                                                                    <li><a class="dropdown-item small text-success" href="{{ url_for('mudar_nivel', id_alvo=u.id, novo_nivel=10) }}">Usuário (10)</a></li>
+                                                                    <li><a class="dropdown-item small text-danger" href="{{ url_for('mudar_nivel', id_alvo=u.id, novo_nivel=0) }}">Banir (0)</a></li>
+                                                                </ul>
+                                                            </div>
+                                                        </td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
                                     </table>
                                 </div>
                             </div>
