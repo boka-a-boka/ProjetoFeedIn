@@ -115,15 +115,9 @@ def processar_mudanca_nivel(usuario_alvo, novo_nivel, executor=None):
         # ---------------------------------------------------------------------
         if usuario_alvo.id_indicador:
 
-            # SE ESTIVER NO BETA: Avalia concessão de selo por indicação de admin
-            if is_periodo_beta:
-                foi_promovido_por_origem = usuario_alvo.check_pioneiro_status()
-                if foi_promovido_por_origem:
-                    print(f"[ADMIN] Usuário {usuario_alvo.username} ganhou selo por indicação direta da administração.")
-
             # Regra de Convite via WhatsApp (Sempre atualiza o vínculo, mas o selo do padrinho respeita o Beta)
             try:
-                from models import Convite  # <-- Certifique-se de usar o caminho correto do seu arquivo de models
+                from models import Convite
                 convite_pendente = Convite.query.filter_by(
                     id_remetente=usuario_alvo.id_indicador,
                     status_onboarding=False
@@ -133,13 +127,19 @@ def processar_mudanca_nivel(usuario_alvo, novo_nivel, executor=None):
                     convite_pendente.status_onboarding = True
                     convite_pendente.id_destinatario = usuario_alvo.id
 
-                    # SE ESTIVER NO BETA: O padrinho pode ganhar o selo pelos 10 convites
+                    # SE ESTIVER NO BETA: Avalia se o PADRINHO ganha o mérito
                     if is_periodo_beta:
                         padrinho = Usuario.query.get(usuario_alvo.id_indicador)
-                        if padrinho and padrinho.convites_aceitos >= 10 and not padrinho.is_pioneiro:
-                            padrinho.is_pioneiro = True
-                            print(
-                                f"🏆 MÉRITO BETA: O padrinho {padrinho.username} atingiu 10 convites e virou Pioneiro Vitalício!")
+
+                        if padrinho:
+                            # SEU AJUSTE AQUI: A checagem de Pioneiro deve ser feita no PADRINHO,
+                            # pois é ele quem está fazendo o "esforço" de indicar pessoas.
+                            ganhou_por_esforco_proprio = padrinho.check_pioneiro_status()
+
+                            if ganhou_por_esforco_proprio and not padrinho.is_pioneiro:
+                                padrinho.is_pioneiro = True
+                                print(
+                                    f"🏆 MÉRITO BETA: O padrinho {padrinho.username} atingiu os critérios e virou Pioneiro Vitalício!")
                     else:
                         print(
                             f"Convite validado para estatísticas, mas Padrinho ID {usuario_alvo.id_indicador} não ganha selo (Fim do Beta).")
@@ -151,12 +151,9 @@ def processar_mudanca_nivel(usuario_alvo, novo_nivel, executor=None):
         # SITUAÇÃO B: O Usuário é Orgânico (Não veio por convite)
         # ---------------------------------------------------------------------
         else:
-            # SE ESTIVER NO BETA: Verifica se bateu metas orgânicas (Ex: 10 conexões próprias)
+            # Usuários orgânicos apenas sobem de nível, não há padrinho para avaliar.
             if is_periodo_beta:
-                ganhou_por_esforco_proprio = usuario_alvo.check_pioneiro_status()
-                if ganhou_por_esforço_proprio:
-                    print(
-                        f"✨ MÉRITO BETA: Usuário comum {usuario_alvo.username} atingiu os critérios orgânicos de Pioneiro!")
+                print(f"✨ MÉRITO BETA: Usuário orgânico {usuario_alvo.username} promovido a Nível 10.")
             else:
                 print(f"🔐 Acesso Liberado: Usuário orgânico {usuario_alvo.username} promovido a Nível 10 (Pós-Beta).")
 

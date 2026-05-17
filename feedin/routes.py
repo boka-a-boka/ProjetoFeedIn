@@ -1378,6 +1378,42 @@ def aceitar_conexao(conexao_id):
     return redirect(url_for('dashboard', aba='conexoes'))
 
 
+@app.route('/desfazer_conexao/<int:usuario_id>', methods=['POST'])
+@login_required
+def desfazer_conexao(usuario_id):
+    # Procura a conexão ativa entre os dois usuários (em qualquer sentido: A->B ou B->A)
+    conexao = Conexoes.query.filter(
+        ((Conexoes.id_remetente == current_user.id) & (Conexoes.id_destinatario == usuario_id) & (
+                    Conexoes.status == 'aceito')) |
+        ((Conexoes.id_remetente == usuario_id) & (Conexoes.id_destinatario == current_user.id) & (
+                    Conexoes.status == 'aceito'))
+    ).first()
+
+    if not conexao:
+        flash('Conexão não encontrada ou já desfeita.', 'warning')
+        return redirect(request.referrer)
+
+    try:
+        # Mudamos o status para 'desfeito' de forma silenciosa
+        conexao.status = 'desfeito'
+
+        # Opcional: Se você quiser sumir com a publicação antiga do feed que dizia "Rede Fortalecida!"
+        # podemos buscar a Memória vinculada a essa conexão e desativá-la
+        memoria_vinculada = Memoria.query.filter_by(id_conexao=conexao.id).first()
+        if memoria_vinculada:
+            database.session.delete(memoria_vinculada)  # Remove a postagem do feed para sumir com o rastro
+
+        database.session.commit()
+        flash('Conexão desfeita com sucesso.', 'success')
+
+    except Exception as e:
+        database.session.rollback()
+        print(f"--- ERRO AO DESFAZER CONEXÃO: {e} ---")
+        flash('Erro técnico ao processar a solicitação.', 'danger')
+
+    return redirect(request.referrer)
+
+
 @app.route("/responder_convite/<int:id_convite>/<string:acao>", methods=['POST', 'GET'])
 @login_required
 def responder_convite(id_convite, acao):
