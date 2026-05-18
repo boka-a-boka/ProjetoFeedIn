@@ -594,6 +594,17 @@ class AtividadeLocal(database.Model):
     def autor_objeto(self):
         return self.criador
 
+    # Coloque isso DENTRO da classe AtividadeLocal:
+    @property
+    def pessoas_marcadas_confirmadas(self):
+        """Nas atividades de local, os participantes fixados na tabela intermediária já são confirmados"""
+        return self.participantes
+
+    @property
+    def solicitantes_pendentes_ids(self):
+        """Atividades locais de histórico geralmente não têm fluxo de pendência individual por post"""
+        return []
+
     # --- MÉTODOS DE LÓGICA ---
     def usuario_ja_reagiu_tipo(self, user_id, tipo_procurado):
         # Nota: Certifique-se que PostagemInteracao está acessível ou importado
@@ -630,7 +641,11 @@ class Convite(database.Model):
 
     # Relacionamentos Explícitos
     # Isso ajuda o Flask-SQLAlchemy a não se perder ao acessar convite.usuario_remetente
-    usuario_remetente = database.relationship('Usuario', foreign_keys=[id_remetente])
+    usuario_remetente = database.relationship(
+        'Usuario',
+        foreign_keys=[id_remetente],
+        overlaps="convites_enviados_whats,remetente"  # <--- A CHAVE DA SOLUÇÃO AQUI
+    )
     usuario_confirmado = database.relationship('Usuario', foreign_keys=[id_destinatario])
     tipo_vinculo = database.Column(database.String(20))  # 'gosto', 'local' ou 'grupo'
     id_referencia = database.Column(database.Integer)  # ID da Taxonomia ou do Local
@@ -693,15 +708,6 @@ postagem_tags = database.Table('postagem_tags',
                                )
 
 
-# 1. Defina a tabela de ligação FORA e ANTES da classe Postagem
-postagem_marcacoes = database.Table('postagem_marcacoes',
-                                    database.Column('id_postagem', database.Integer,
-                                                    database.ForeignKey('postagens.id'), primary_key=True),
-                                    database.Column('id_usuario', database.Integer, database.ForeignKey('usuario.id'),
-                                                    primary_key=True),
-                                    extend_existing=True
-                                    )
-
 
 class Postagem(database.Model):
     __tablename__ = 'postagens'
@@ -730,6 +736,14 @@ class Postagem(database.Model):
     pessoas_marcadas = database.relationship('Usuario',
                                              secondary=postagem_marcacoes,
                                              backref=database.backref('marcacoes_em_posts', lazy='dynamic'))
+
+    pessoas_marcadas_novas = database.relationship(
+        'Usuario',
+        secondary='marcacoes_postagens',
+        primaryjoin="Postagem.id == marcacoes_postagens.c.postagem_id",
+        secondaryjoin="and_(Usuario.id == marcacoes_postagens.c.usuario_id, marcacoes_postagens.c.status == 'aceito')",
+        viewonly=True
+    )
 
     # Métodos de conveniência
     @property
@@ -762,6 +776,21 @@ class Postagem(database.Model):
     def tags(self):
         """Apelido para tags_afinidade para facilitar o uso nos templates e rotas"""
         return self.tags_afinidade
+
+    @property
+    def pessoas_marcadas_confirmadas(self):
+        """Retorna a lista de usuários cuja marcação já foi aceita pelo autor"""
+        # Importação tardia para evitar importação cíclica
+        from feedin.models import MarcacaoPostagem
+        vinculos = MarcacaoPostagem.query.filter_by(postagem_id=self.id, status='aceito').all()
+        return [v.usuario for v in vinculos if v.usuario]
+
+    @property
+    def solicitantes_pendentes_ids(self):
+        """Retorna uma lista de IDs de usuários que pediram para ser marcados e estão aguardando"""
+        from feedin.models import MarcacaoPostagem
+        vinculos = MarcacaoPostagem.query.filter_by(postagem_id=self.id, status='pendente').all()
+        return [v.usuario_id for v in vinculos]
 
     def usuario_ja_deu_nao_curti(self, user_id):
         # CRITICAL: Certifique-se de filtrar pelo tipo='nao_curti'
@@ -847,3 +876,30 @@ class Notificacao(database.Model):
 
     # Relacionamentos para facilitar a exibição
     origem = database.relationship('Usuario', foreign_keys=[id_usuario_origem])
+
+
+class MarcacaoPostagem(database.Model):
+    __tablename__ = 'marcacoes_postagens'
+
+    id = database.Column(database.Integer, primary_key=True)
+
+    # 1. Ajustado para 'postagens.id' (Confirme se o __tablename__ da sua classe Postagem é plural ou singular)
+    postagem_id = database.Column(database.Integer, database.ForeignKey('postagens.id', ondelete='CASCADE'),
+                                  nullable=False)
+
+    # 2. CORREÇÃO CRÍTICA: Mudado de 'usuarios.id' para 'usuario.id' para casar com o seu __tablename__
+    usuario_id = database.Column(database.Integer, database.ForeignKey('usuario.id', ondelete='CASCADE'),
+                                 nullable=False)
+    solicitante_id = database.Column(database.Integer, database.ForeignKey('usuario.id', ondelete='CASCADE'))
+
+    status = database.Column(database.String(20), default='pendente', nullable=False)
+    criado_em = database.Column(database.DateTime, default=lambda: datetime.now(timezone.utc))
+    respondido_em = database.Column(database.DateTime)
+
+    # Relacionamentos explícitos apontando para a classe 'Usuario'
+    postagem = database.relationship('Postagem', backref=database.backref('marcacoes', lazy='dynamic'))
+
+    usuario = database.relationship('Usuario', foreign_keys=[usuario_id],
+                                    backref=database.backref('memorias_marcado', lazy='dynamic'))
+    solicitante = database.relationship('Usuario', foreign_keys=[solicitante_id],
+                                        backref=database.backref('solicitacoes_marcacao_feitas', lazy='dynamic'))

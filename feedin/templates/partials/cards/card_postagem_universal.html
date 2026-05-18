@@ -26,6 +26,14 @@
     {% if context_origem not in ['perfil_local', 'perfil_publico'] %}
     .card-text { overflow: hidden; }
     {% endif %}
+
+    /* Ajuste de transição para o botão discreto */
+    .btn-fluxo-silencioso {
+        transition: all 0.2s ease-in-out;
+    }
+    .btn-fluxo-silencioso:hover {
+        transform: translateY(-1px);
+    }
 </style>
 
 {# 1. IDENTIFICAÇÃO E CAPTURA #}
@@ -40,7 +48,7 @@
 
 <div class="card border-0 shadow-sm mb-3 {{ 'border-start border-primary border-4' if eh_sistema }}" id="post-{{ atividade.id }}">
     <div class="card-body">
-        
+
         {# CABEÇALHO #}
         {% if autor_obj %}
         <div class="d-flex align-items-center mb-3">
@@ -59,7 +67,7 @@
             {% endif %}
 
             {# TEXTO #}
-            <div class="card-text text-dark" style="font-size: 1.05rem; line-height: 1.5;">
+            <div class="card-text text-dark mb-3" style="font-size: 1.05rem; line-height: 1.5;">
                 {% if eh_sistema %}
                     <i class="bi bi-stars text-primary me-1"></i> <strong>{{ texto | safe }}</strong>
                 {% else %}
@@ -67,13 +75,67 @@
                 {% endif %}
             </div>
 
+            {# --- NOVO NOVO BLOCO: FLUXO DE GESTÃO DE MARCAÇÃO SILENCIOSA --- #}
+            {% if not eh_sistema and current_user.is_authenticated %}
+                <div class="mt-2 pt-2 border-top border-light d-flex align-items-center justify-content-between mb-3" style="background-color: #fcfbfa; padding: 8px 12px; border-radius: 8px;">
 
-            {# LINHA 1: PESSOAS MARCADAS #}
+                    {# Lado Esquerdo: Identifica quem já está validado ali #}
+                    <div class="d-flex align-items-center gap-1 text-muted" style="font-size: 0.78rem;">
+                        <i class="bi bi-tags text-secondary"></i>
+                        <span>Nesta lembrança:</span>
+                        {% if atividade.pessoas_marcadas %}
+                            {% for pessoa in atividade.pessoas_marcadas %}
+                                <a href="{{ url_for('ver_perfil', usuario_id=pessoa.id) }}" class="text-decoration-none fw-bold text-secondary">@{{ pessoa.username }}</a>{% if not loop.last %}, {% endif %}
+                            {% endfor %}
+                        {% else %}
+                            <span class="fst-italic opacity-75">Ninguém identificado</span>
+                        {% endif %}
+                    </div>
+
+                    {# Lado Direito: Ações dinâmicas baseadas no relacionamento com a foto #}
+                    <div>
+                        {% if autor_obj and autor_obj.id == current_user.id %}
+                            {# Se eu sou o dono do post, exibo apenas um indicador discreto de controle #}
+                            <span class="text-muted small opacity-50" style="font-size: 0.7rem;"><i class="bi bi-shield-check"></i> Sua memória</span>
+                        {% else %}
+                            {# Se eu sou o visitante: Chaveamento dos estados #}
+
+                            {# ESTADO 1: Eu já fui marcado e aceito pelo dono -> Direito ao Esquecimento #}
+                            {% if atividade.pessoas_marcadas and current_user in atividade.pessoas_marcadas %}
+                                <form action="{{ url_for('remover_minha_marcacao', id_post=atividade.id) }}" method="POST" class="m-0 d-inline">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="btn btn-sm btn-link text-danger text-decoration-none p-0 fw-semibold btn-fluxo-silencioso" style="font-size: 0.75rem;" title="Exercer o Direito ao Esquecimento">
+                                        <i class="bi bi-tag-fill me-1"></i> Não estava lá
+                                    </button>
+                                </form>
+
+                            {# ESTADO 2: Eu já cliquei e está aguardando o dono aceitar #}
+                            {% elif atividade.solicitantes_pendentes_ids and current_user.id in atividade.solicitantes_pendentes_ids %}
+                                <button class="btn btn-sm btn-light rounded-pill px-3 py-1 text-muted fw-medium disabled" style="font-size: 0.72rem; background-color: #f1f3f5;">
+                                    <i class="bi bi-hourglass-split text-warning me-1"></i> Identificação Enviada
+                                </button>
+
+                            {# ESTADO 3: Nenhuma relação ainda -> Solicitar Marcação #}
+                            {% else %}
+                                <form action="{{ url_for('solicitar_marcacao', id_postagem=atividade.id) }}" method="POST" class="m-0 d-inline">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-secondary rounded-pill px-3 py-1 fw-bold text-primary border-primary btn-fluxo-silencioso" style="font-size: 0.72rem; background-color: rgba(13, 110, 253, 0.04); border-color: rgba(13, 110, 253, 0.2) !important;">
+                                        <i class="bi bi-person-workspace me-1"></i> Olha eu ali!
+                                    </button>
+                                </form>
+                            {% endif %}
+                        {% endif %}
+                    </div>
+                </div>
+            {% endif %}
+            {# --- FIM DO BLOCO DE MARCAÇÃO SILENCIOSA --- #}
+
+
+            {# LINHA 1: PESSOAS MARCADAS ANTIGAS (Mantive intacto para não quebrar dependências visuais suas) #}
             {% if atividade and atividade.pessoas_marcadas %}
                 <div class="mb-2">
                     <div class="d-flex flex-wrap gap-1 align-items-center">
                         <i class="bi bi-people text-muted small me-1"></i>
-                        <span class="text-muted small me-1" style="font-size: 0.75rem;"></span>
                         {% for pessoa in atividade.pessoas_marcadas %}
                             <a href="{{ url_for('ver_perfil', usuario_id=pessoa.id) }}" class="text-decoration-none">
                                 <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill fw-normal" style="font-size: 0.7rem;">
@@ -85,23 +147,17 @@
                 </div>
             {% endif %}
 
-            {# LINHA 2: TAGS DE AFINIDADE (Sincronizado com a @property tags e formatado com didática visual) #}
+            {# LINHA 2: TAGS DE AFINIDADE #}
             {% if post_obj and post_obj.tags %}
                 <div class="mt-2 border-top pt-2" style="border-top-style: dotted !important; opacity: 0.9;">
                     <div class="d-flex flex-wrap gap-1">
                         {% for tag in post_obj.tags %}
-                            {# Verifica se o visitante segue essa tag específica para pintar as chaves #}
                             {% if meus_interesses_ids and tag.id in meus_interesses_ids %}
-                                {# Tag de Afinidade Positiva (Azul - Justificou a exibição) #}
-                                <span class="badge bg-primary rounded-pill px-2 py-1 shadow-xs"
-                                      style="font-size: 0.68rem; font-weight: 700; letter-spacing: 0.3px;">
+                                <span class="badge bg-primary rounded-pill px-2 py-1 shadow-xs" style="font-size: 0.68rem; font-weight: 700; letter-spacing: 0.3px;">
                                     <i class="bi bi-bookmark-check-fill me-1"></i>#{{ tag.nome.replace(' ', '') }}
                                 </span>
                             {% else %}
-                                {# Tag Direcionada Oculta (Cinza Fosco - Educativa/Incentivadora) #}
-                                <span class="badge bg-light text-muted rounded-pill px-2 py-1 border text-secondary"
-                                      style="font-size: 0.68rem; font-weight: 600; opacity: 0.65; border-color: #dee2e6 !important;"
-                                      title="Você não segue esta tag. Esta publicação ficou visível para você devido ao vínculo deste Local ou Conexão direta.">
+                                <span class="badge bg-light text-muted rounded-pill px-2 py-1 border text-secondary" style="font-size: 0.68rem; font-weight: 600; opacity: 0.65; border-color: #dee2e6 !important;" title="Você não segue esta tag.">
                                     <i class="bi bi-eye-slash me-1"></i>#{{ tag.nome.replace(' ', '') }}
                                 </span>
                             {% endif %}
@@ -119,7 +175,7 @@
                 {% if post_obj.id_local and context_origem != 'perfil_local' %}
                     <a href="{{ url_for('perfil_local', local_id=post_obj.id_local) }}" class="text-decoration-none">
                         <span class="badge rounded-pill bg-light text-primary border py-2 px-3 shadow-xs" style="font-size: 0.8rem; border-color: #4e73df20 !important;">
-                            <i class="bi bi-geo-alt-fill me-1 text-danger"></i>
+                            <i class="bi ge-alt-fill me-1 text-danger"></i>
                             <span class="fw-bold">
                                 {{ post_obj.local_foco.nome if post_obj.local_foco else "Local" }}
                             </span>
@@ -135,19 +191,12 @@
                     <i class="bi bi-three-dots-vertical fs-5"></i>
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end shadow border-0 rounded-3">
-                    <!-- Editar (Abre um Modal) -->
                     <li>
-                        <!-- Adicionamos data-bs-toggle e data-bs-target para o HTML abrir o modal sozinho -->
-                        <button class="dropdown-item py-2" type="button"
-                                data-bs-toggle="modal"
-                                data-bs-target="#modalEditarPost"
-                                onclick="preencherDadosModalEditar('{{ atividade.id }}', '{{ atividade.conteudo|e }}')">
+                        <button class="dropdown-item py-2" type="button" data-bs-toggle="modal" data-bs-target="#modalEditarPost" onclick="preencherDadosModalEditar('{{ atividade.id }}', '{{ atividade.conteudo|e }}')">
                             <i class="bi bi-pencil me-2 text-primary"></i> Editar História
                         </button>
                     </li>
-                    <!-- Divisor -->
                     <li><hr class="dropdown-divider"></li>
-                    <!-- Excluir (Dispara o Form por segurança) -->
                     <li>
                         <button class="dropdown-item py-2 text-danger" type="button" onclick="confirmarExclusaoPost('{{ atividade.id }}')">
                             <i class="bi bi-trash3 me-2"></i> Excluir Memória
@@ -156,7 +205,6 @@
                 </ul>
             </div>
 
-            <!-- Formulário Invisível para Exclusão Segura via POST -->
             <form id="form-excluir-{{ atividade.id }}" action="{{ url_for('excluir_post', post_id=atividade.id) }}" method="POST" style="display: none;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             </form>
@@ -175,17 +223,13 @@ window.preencherDadosModalEditar = function(postId, conteudoAtual) {
     const inputConteudo = document.getElementById('inputConteudoPost');
 
     if (formEditar && inputConteudo) {
-        // Redireciona o form para a rota certa com o ID do post
         formEditar.action = "/editar_post/" + postId;
-
-        // Coloca o texto antigo dentro da caixinha de texto
         inputConteudo.value = conteudoAtual;
     } else {
         console.error("Erro: Elementos do formulário de edição não encontrados na página.");
     }
 };
 
-// Mantém a exclusão que já está funcionando 100%
 window.confirmarExclusaoPost = function(postId) {
     if (confirm("Tem certeza que deseja remover esta história permanentemente? Esta ação não poderá ser desfeita.")) {
         const formExcluir = document.getElementById('form-excluir-' + postId);

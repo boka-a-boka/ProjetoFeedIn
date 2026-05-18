@@ -1,17 +1,17 @@
 from flask import (url_for, redirect, render_template, flash, session, request,
-                   abort, Response, jsonify, current_app, send_from_directory)
+                   abort, Response, jsonify, current_app, send_from_directory, Blueprint)
 from feedin import app, database, bcrypt
 from flask_mail import Mail, Message
 from flask_login import login_required, login_user, logout_user, current_user
 from feedin.forms import FormLogin, FormNewUser, FormPerfil, FormApelido, FormConvite, FormConexao
 from itsdangerous import URLSafeTimedSerializer
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 from feedin.models import (Usuario, EstadoCivil, Generos, Apelidos, Perfil, Parentesco,
                            GrauParentesco, MembroGrupo, GrupoSocial, Local, Conexoes, Memoria,
                            AtividadeLocal, VinculoUsuarioLocal, Taxonomia, LocalMidia, Convite,
                            taxonomia_conexoes, ConviteAdmin, IdentidadeCivil, Postagem, PostagemComentario,
                            PostagemInteracao, postagem_tags, usuarios_interesses, ReivindicacaoLocal,
-                           AvaliacaoLocal, Notificacao, Bloqueios, Desconexoes)
+                           AvaliacaoLocal, Notificacao, Bloqueios, Desconexoes, MarcacaoPostagem)
 
 from feedin.utils import salvar_imagem, processar_mudanca_nivel, obter_signo, validar_cpf_estrutura, salvar_imagem_capa, salvar_imagem_postagem
 from werkzeug.utils import secure_filename
@@ -555,8 +555,21 @@ def dashboard():
         ).order_by(Conexoes.data_solicitacao.desc()).all()
 
         if aba == 'feed':
-            atividades_recentes = obter_atividades_feed(current_user)
-            # No Feed, carregamos apenas o essencial para o carrossel (Rápido)
+            # 1. Busca as atividades/postagens normais do feed
+            atividades_normais = obter_atividades_feed(current_user)
+
+            # 2. Busca as notificações de marcação não lidas direcionadas ao usuário logado
+            # (Elas possuem a propriedade .dados_marcacao que o card_postagem.html espera)
+            notificacoes_marcacao = Notificacao.query.filter_by(
+                id_usuario_destino=current_user.id,
+                tipo='marcacao',
+                lida=False
+            ).order_by(Notificacao.data_criacao.desc()).all()
+
+            # 3. Unifica os dois mundos: as notificações entram no TOPO do feed para ação imediata
+            atividades_recentes = notificacoes_marcacao + atividades_normais
+
+            # Mantém o carregamento essencial para o carrossel (Rápido)
             lista_sugestoes = obter_sugestoes_carrossel(current_user)
 
         if aba == 'conexoes':
@@ -4042,3 +4055,162 @@ def registrar_reivindicacao(local_id):
         flash("Você já possui uma solicitação de gestão em análise para este local.", "info")
 
     return redirect(url_for('perfil_local', local_id=local_id))
+
+
+@app.route('/postagem/<int:id_postagem>/solicitar_marcacao', methods=['POST'])
+@login_required
+def solicitar_marcacao(id_postagem):
+    # 1. Busca a postagem alvo
+    post = Postagem.query.get_or_404(id_postagem)
+
+    # 2. Segurança: Verifica se o usuário já não está marcado ou pendente para evitar duplicidade
+    ja_existe = MarcacaoPostagem.query.filter_by(
+        postagem_id=post.id,
+        usuario_id=current_user.id
+    ).first()
+
+    if not ja_existe:
+        # --- PASSO CRÍTICO AQUI: Inserir na tabela de controle de estados ---
+        nova_marcacao = MarcacaoPostagem(
+            postagem_id=post.id,
+            usuario_id=current_user.id,  # Quem está sendo marcado
+            solicitante_id=current_user.id,  # Quem tomou a iniciativa (neste caso, ele mesmo)
+            status='pendente'  # Aguardando o dono do post aprovar
+        )
+        database.session.add(nova_marcacao)
+
+        # --- PASSO 2: Inserir na tabela de notificações para gerar o alerta visual ---
+        nova_notificacao = Notificacao(
+            id_usuario_destino=post.id_usuario,  # Dono do post (quem vai receber)
+            id_usuario_origem=current_user.id,  # Quem gerou (quem quer ser marcado)
+            id_postagem_referencia=post.id,
+            mensagem=f"@{current_user.username} solicitou identificação em sua memória.",
+            tipo='marcacao',
+            lida=False
+        )
+        database.session.add(nova_notificacao)
+
+        # Salva ambas as operações no banco de dados de forma atômica
+        database.session.commit()
+
+    return redirect(request.referrer or url_for('dashboard'))
+
+
+@app.route('/remover_minha_marcacao/<int:id_post>', methods=['POST'])
+@login_required
+def remover_minha_marcacao(id_post):
+    """
+    Direito ao Esquecimento: Remove qualquer vínculo ou solicitação entre
+    o usuário logado e a postagem específica.
+    """
+    # Localiza o vínculo na tabela controladora
+    vinc_marcacao = MarcacaoPostagem.query.filter_by(
+        postagem_id=id_post,
+        usuario_id=current_user.id
+    ).first()
+
+    if vinc_marcacao:
+        try:
+            database.session.delete(vinc_marcacao)
+            database.session.commit()
+            flash("Sua identificação foi removida desta memória.", "success")
+        except Exception as e:
+            database.session.rollback()
+            print(f"Erro ao remover marcação: {e}")
+            flash("Erro ao processar a remoção da marcação.", "danger")
+    else:
+        flash("Nenhuma identificação ativa ou pendente foi encontrada.", "warning")
+
+    return redirect(request.referrer or url_for('dashboard'))
+
+
+@app.route('/marcacao/<int:id_marcacao>/aceitar', methods=['POST'])
+@login_required
+def aceitar_marcacao(id_marcacao):
+    """O dono da postagem aprova a marcação solicitada por outro usuário."""
+    from feedin.models import MarcacaoPostagem, Postagem, Notificacao
+
+    marcacao = MarcacaoPostagem.query.get_or_404(id_marcacao)
+    post = Postagem.query.get_or_404(marcacao.postagem_id)
+
+    if post.id_usuario != current_user.id:
+        flash("Você não tem permissão para gerenciar marcações nesta publicação.", "danger")
+        return redirect(url_for('dashboard'))
+
+    try:
+        # 1. Atualiza o status para ativo
+        marcacao.status = 'aceito'
+
+        # 2. Marca a notificação de SOLICITAÇÃO como lida (para sumir do feed do dono do post)
+        notif_solicitacao = Notificacao.query.filter_by(
+            id_usuario_destino=current_user.id,  # Dono do post
+            id_usuario_origem=marcacao.usuario_id,  # Quem pediu
+            id_postagem_referencia=marcacao.postagem_id,
+            tipo='marcacao',
+            lida=False  # Apenas as que ainda estavam pendentes
+        ).first()
+
+        if notif_solicitacao:
+            notif_solicitacao.lida = True
+
+        # --- O PULO DO GATO: GERAR A NOTIFICAÇÃO DE CONFIRMAÇÃO ---
+        # Agora o destino é quem solicitou, e a origem é o dono do post (current_user)
+        notif_confirmacao = Notificacao(
+            id_usuario_destino=marcacao.usuario_id,  # O solicitante (vai receber o aviso)
+            id_usuario_origem=current_user.id,  # O dono do post (quem aceitou)
+            id_postagem_referencia=post.id,
+            mensagem=f"@{current_user.username} aceitou sua identificação na memória dele.",
+            tipo='marcacao',
+            lida=False  # Entra como não lida para aparecer no feed dele
+        )
+        database.session.add(notif_confirmacao)
+
+        database.session.commit()
+        flash("A marcação foi aceita e integrada à história desta memória!", "success")
+    except Exception as e:
+        database.session.rollback()
+        print(f"Erro ao aceitar marcação: {e}")
+        flash("Erro ao processar a aprovação.", "danger")
+
+    return redirect(request.referrer or url_for('dashboard'))
+
+
+@app.route('/marcacao/<int:id_marcacao>/recusar', methods=['POST'])
+@login_required
+def recusar_marcacao(id_marcacao):
+    """O dono da postagem rejeita a solicitação de marcação."""
+    from feedin.models import MarcacaoPostagem, Postagem
+
+    # 1. Busca o registro na tabela de controle
+    marcacao = MarcacaoPostagem.query.get_or_404(id_marcacao)
+
+    # 2. Busca a postagem correspondente usando o postagem_id direto
+    post = Postagem.query.get_or_404(marcacao.postagem_id)
+
+    # 3. Segurança: Apenas o dono da postagem original pode recusar
+    if post.id_usuario != current_user.id:
+        flash("Você não tem permissão para gerenciar marcações nesta publicação.", "danger")
+        return redirect(url_for('dashboard'))
+
+    try:
+        # Remove a solicitação pendente do banco de dados
+        database.session.delete(marcacao)
+
+        # Localiza a notificação do feed e também a remove
+        notif = Notificacao.query.filter_by(
+            id_usuario_destino=current_user.id,
+            id_usuario_origem=marcacao.usuario_id,
+            id_postagem_referencia=marcacao.postagem_id,
+            tipo='marcacao'
+        ).first()
+        if notif:
+            database.session.delete(notif)
+
+        database.session.commit()
+        flash("A solicitação de marcação foi recusada.", "info")
+    except Exception as e:
+        database.session.rollback()
+        print(f"Erro ao recusar marcação: {e}")
+        flash("Erro ao processar a recusa.", "danger")
+
+    return redirect(request.referrer or url_for('dashboard'))

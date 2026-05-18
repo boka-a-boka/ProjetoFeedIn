@@ -62,6 +62,15 @@
     border-bottom: 0 !important;
 }
 
+/* NOVO: Matiz discreta e acolhedora para Gerenciamento de Memória/Marcações (Tom Amendoado/Dourado Histórico Suave) */
+.card.notification-item.notification-marcacao {
+    background-color: #fffaf0 !important; /* Marfim quente, remete a papel antigo/resgate */
+    border-left: 5px solid #d4a373 !important; /* Linha de tom couro/madeira confortável */
+    border-top: 0 !important;
+    border-right: 0 !important;
+    border-bottom: 0 !important;
+}
+
 .notification-content {
     display: flex;
     flex-wrap: wrap;
@@ -73,6 +82,11 @@
     color: #0050b3; /* Tom azul escuro elegante para destacar os @usernames */
 }
 
+/* NOVO: Cor alternativa de destaque para os usuários na linha do tempo de memória */
+.notification-marcacao .notification-users {
+    color: #a06a42; /* Castanho profundo elegante */
+}
+
 /* O "Botão" identificador de tipo */
 .badge-conexao {
     background-color: #1890ff !important;
@@ -82,16 +96,27 @@
     font-size: 0.8rem;
 }
 
+/* NOVO: Badge específico do selo de marcação */
+.badge-marcacao {
+    background-color: #d4a373 !important;
+    color: white !important;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+}
+
 /* --- Ajuste Crítico para Smartphone --- */
 @media (max-width: 480px) {
     /* Reestrutura as caixas internas do card para alinhar tudo à esquerda no mobile */
-    .card.notification-item.notification-conexao .card-body {
+    .card.notification-item.notification-conexao .card-body,
+    .card.notification-item.notification-marcacao .card-body {
         flex-direction: column !important;
         align-items: flex-start !important;
         gap: 10px;
     }
 
-    .card.notification-item.notification-conexao .d-flex.align-items-center.flex-grow-1 {
+    .card.notification-item.notification-conexao .d-flex.align-items-center.flex-grow-1,
+    .card.notification-item.notification-marcacao .d-flex.align-items-center.flex-grow-1 {
         flex-direction: column !important;
         align-items: flex-start !important;
         gap: 8px;
@@ -113,24 +138,36 @@
         font-size: 0.9rem; /* Um tiquinho menor para garantir o encaixe */
         color: #555;
     }
+
+    .botoes-acao-marcacao {
+        width: 100%;
+        justify-content: flex-start !important;
+        margin-top: 5px;
+    }
 }
 </style>
 
-{# 1. LÓGICA DE DADOS #}
+{# 1. LÓGICA DE DADOS (Blindada para Postagens e Notificações) #}
 {% set id_post = atividade.id or atividade['id'] %}
-{% set c = atividade.dados_conexao %}
+
+{# Se o item do feed for uma Notificação do tipo marcação, extraímos o m de forma direta e explícita #}
+{% if atividade.tipo is defined and atividade.tipo == 'marcacao' %}
+    {% set m = atividade.dados_marcacao %}
+    {% set c = None %}
+{% else %}
+    {% set c = atividade.dados_conexao if atividade.dados_conexao is defined else None %}
+    {% set m = atividade.dados_marcacao if atividade.dados_marcacao is defined else None %}
+{% endif %}
 
 {# 2. A MÁGICA DA DECISÃO #}
 
 {% if atividade.id_conexao and c %}
-{# --- LAYOUT A: REDE FORTALECIDA (Versão Slim, Discreta e Elegante) --- #}
-    <!-- Removeu-se o bg-dark para a cor customizada da notificação brilhar -->
+    {# --- LAYOUT A: REDE FORTALECIDA (Versão Slim, Discreta e Elegante) --- #}
     <div class="card border-0 shadow-sm rounded-3 mb-3 border-start border-primary border-3 notification-item notification-conexao" style="padding: 0;">
         <div class="card-body p-2 px-3 d-flex align-items-center justify-content-between">
 
             <!-- Lado Esquerdo: Mini-avatares e Texto Corrido -->
             <div class="d-flex align-items-center flex-grow-1 overflow-hidden me-2">
-                <!-- Mini Fotos Sobrepostas -->
                 <div class="d-flex align-items-center me-3" style="min-width: 50px; position: relative; height: 32px; flex-shrink: 0;">
                     <img src="{{ url_for('servir_foto_perfil', usuario_id=c.id_remetente) }}"
                          class="rounded-circle border border-2 border-white"
@@ -143,21 +180,84 @@
                          onerror="this.src='/static/fotos_perfil/default.jpg'">
                 </div>
 
-                <!-- Conteúdo da Notificação com quebra controlada -->
                 <div class="notification-content">
-                    <!-- Linha 1: Os usuários reais vindos do objeto 'c' -->
                     <span class="notification-users">
                         @{{ c.remetente.username or c.usuario_remetente.username or 'Alguém' }} e @{{ c.destinatario.username or c.usuario_destinatario.username or 'Alguém' }}</span>
-                    <!-- Linha 2: A mensagem de conexão -->
                     <span class="notification-action">agora estão conectados na teia!</span>
                 </div>
             </div>
 
-            <!-- Lado Direito: Selo sutil (Visível em desktop e mobile se couber) -->
+            <!-- Lado Direito: Selo sutil -->
             <div class="flex-shrink-0">
                 <span class="badge badge-conexao rounded-pill fw-bold" style="font-size: 0.65rem; padding: 4px 8px;">
                     <i class="bi bi-link-45deg"></i> Conexão
                 </span>
+            </div>
+
+        </div>
+    </div>
+
+{% elif m %}
+    {# --- NOVO LAYOUT C: FLUXO SILENCIOSO DE MARCAÇÃO ("Olha eu ali!" / Gestão Discreta) --- #}
+    <div class="card border-0 shadow-sm rounded-3 mb-3 notification-item notification-marcacao" style="padding: 0;">
+        <div class="card-body p-2 px-3 d-flex align-items-center justify-content-between">
+
+            <!-- Lado Esquerdo: Avatar do solicitante e texto da ação -->
+            <div class="d-flex align-items-center flex-grow-1 overflow-hidden me-2">
+                <div class="me-3" style="flex-shrink: 0;">
+                    <img src="{{ url_for('servir_foto_perfil', usuario_id=m.solicitante_id) }}"
+                         class="rounded-circle border border-2 border-white"
+                         style="width: 32px; height: 32px; object-fit: cover;"
+                         onerror="this.src='/static/fotos_perfil/default.jpg'">
+                </div>
+
+                <div class="notification-content">
+                    <span class="notification-users">@{{ m.solicitante_username }}</span>
+
+                    {% if m.status == 'pendente' %}
+                        <span class="notification-action">solicitou a marcação: <span class="fst-italic text-dark fw-semibold">"Olha eu ali!"</span> nesta memória.</span>
+                    {% elif m.status == 'aceito' %}
+                        <span class="notification-action">foi integrado à história desta publicação.</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Lado Direito: Miniatura discreta (90px herdado do seu padrão para preservar cliques) e Botões de Ação -->
+            <div class="d-flex align-items-center gap-3 botoes-acao-marcacao flex-shrink-0">
+
+                {# A Miniatura Discreta obrigando a ir para a fonte se quiser ver detalhes #}
+                {% if m.postagem_imagem %}
+                    <a href="{{ url_for('ver_perfil', usuario_id=m.autor_id) }}#post-{{ m.postagem_id }}" title="Ver na fonte original">
+                        <img src="{{ url_for('static', filename='uploads/posts/' ~ m.postagem_imagem) }}"
+                             class="border rounded-2 shadow-sm"
+                             style="width: 40px; height: 40px; object-fit: cover;">
+                    </a>
+                {% endif %}
+
+                {# Se a marcação está pendente E o usuário logado é o dono da publicação, mostra botões de decisão #}
+                {% if m.status == 'pendente' and current_user.id == m.autor_id %}
+                    <div class="d-flex gap-1">
+                        <form action="{{ url_for('recusar_marcacao', id_marcacao=m.id) }}" method="POST" class="m-0">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-sm btn-link text-muted text-decoration-none py-0 px-2" style="font-size: 0.75rem;">
+                                Recusar
+                            </button>
+                        </form>
+                        <form action="{{ url_for('aceitar_marcacao', id_marcacao=m.id) }}" method="POST" class="m-0">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-sm btn-outline-secondary py-0 px-2 rounded-pill" style="font-size: 0.75rem; border-color: #d4a373; color: #a06a42;">
+                                Aceitar
+                            </button>
+                        </form>
+                    </div>
+                {% else %}
+                    {# Caso contrário, exibe apenas o selo discreto identificando o tipo de registro #}
+                    <div>
+                        <span class="badge badge-marcacao rounded-pill fw-bold" style="font-size: 0.65rem; padding: 4px 8px;">
+                            <i class="bi bi-tag"></i> Memória
+                        </span>
+                    </div>
+                {% endif %}
             </div>
 
         </div>
@@ -171,7 +271,7 @@
 
     <div class="card border-0 shadow-sm rounded-4 mb-4 bg-white overflow-hidden card-postagem-final" id="post-{{ id_post }}">
 
-{# CABEÇALHO COM MINIATURA #}
+        {# CABEÇALHO COM MINIATURA #}
         <div class="p-3 d-flex align-items-center justify-content-between">
             <div class="d-flex align-items-center">
                 {% if autor %}
@@ -187,22 +287,18 @@
             </div>
         </div>
 
-        {# REMOVEMOS O BLOCO DE IMAGEM GRANDE DAQUI PARA LIMPAR O FEED #}
-        {# A imagem agora só aparece se o usuário clicar na miniatura ou no link do rodapé #}
-
         {# CORPO DO TEXTO (Lógica festiva interna de posts manuais) #}
-<div class="p-4 pt-2" style="display: block; overflow: hidden;">
-    {% if imagem -%}
-        <a href="{{ url_for('ver_perfil', usuario_id=autor.id) }}#post-{{ id_post }}">
-            <img src="{{ url_for('static', filename='uploads/posts/' ~ imagem) }}" class="img-wrap-text">
-        </a>
-    {%- endif -%}
+        <div class="p-4 pt-2" style="display: block; overflow: hidden;">
+            {% if imagem -%}
+                <a href="{{ url_for('ver_perfil', usuario_id=autor.id) }}#post-{{ id_post }}">
+                    <img src="{{ url_for('static', filename='uploads/posts/' ~ imagem) }}" class="img-wrap-text">
+                </a>
+            {%- endif -%}
 
-    {# O segredo aqui é o .strip() e garantir que não haja NADA entre a imagem e o texto no código #}
-    <p class="text-dark mb-0 texto-postagem" style="white-space: pre-line; font-size: 1.1rem; line-height: 1.4; font-weight: 500; margin: 0; padding: 0;">{{- texto.strip() | safe -}}</p>
+            <p class="text-dark mb-0 texto-postagem" style="white-space: pre-line; font-size: 1.1rem; line-height: 1.4; font-weight: 500; margin: 0; padding: 0;">{{- texto.strip() | safe -}}</p>
 
-    <div style="clear: both;"></div>
-</div>
+            <div style="clear: both;"></div>
+        </div>
 
         {# RODAPÉ #}
         <div class="px-4 pb-3 border-top pt-2 text-end">
