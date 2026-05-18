@@ -735,7 +735,7 @@ class Postagem(database.Model):
     # É este campo que a rota 'criar_postagem' vai usar para dar o .append() ou .extend()
 
     # 2. Nova relação (Mantida exatamente como você estruturou)
-    pessoas_marcadas_novas = database.relationship(
+    pessoas_marcadas = database.relationship(
         'Usuario',
         secondary='marcacoes_postagens',
         primaryjoin="Postagem.id == marcacoes_postagens.c.postagem_id",
