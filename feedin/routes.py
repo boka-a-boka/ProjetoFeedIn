@@ -20,8 +20,9 @@ from functools import wraps
 from sqlalchemy import or_, func, asc, and_, not_
 from sqlalchemy.orm import joinedload
 from cryptography.fernet import Fernet  # Para criptografia reversível
+from markupsafe import escape
 from PIL import Image, ImageOps
-import secrets, os, re, io, csv, json, pytz, uuid
+import secrets, os, re, io, csv, json, pytz, uuid, markdown
 
 mail = Mail(app)
 s = URLSafeTimedSerializer(app.config['SECRET_KEY'])
@@ -325,6 +326,23 @@ def newuser():
             flash('Erro ao enviar e-mail de confirmação.', 'danger')
 
     return render_template("newuser.html", form=form_newuser, id_indicador=id_indicador_final)
+
+
+@app.template_filter('formatar_postagem')
+def formatar_postagem(texto):
+    if not texto:
+        return ""
+
+    # 1. Converte o texto para string e limpa qualquer HTML malicioso (bloqueia <script>, etc)
+    texto_seguro = str(escape(texto))
+
+    # 2. Converte a formatação estilo WhatsApp (* e _) para o padrão do Markdown (** e *)
+    texto_processado = re.sub(r'\*(.*?)\*', r'**\1**', texto_seguro)  # Negrito
+    texto_processado = re.sub(r'_(.*?)_', r'*\1*', texto_processado)  # Itálico
+
+    # 3. Transforma em HTML o que sobrou (apenas as marcações seguras de negrito e itálico)
+    html_puro = markdown.markdown(texto_processado)
+    return html_puro
 
 
 @app.route("/", methods=["GET", "POST"])
@@ -2694,6 +2712,63 @@ def sugerir_local():
     except Exception as e:
         database.session.rollback()
         return jsonify({"status": "erro", "message": str(e)}), 500
+
+
+@app.route('/api/local/<int:local_id>/tags_ocultas')
+@login_required
+def tags_ocultas_local(local_id):
+    try:
+
+        # 1. Busca os posts ativos do local
+        posts_do_local = Postagem.query.filter_by(id_local=local_id, ativo=True).all()
+        if not posts_do_local:
+            return jsonify([])
+
+        # 2. Pega os IDs dos interesses do usuário logado
+        interesses_usuario_ids = {tag.id for tag in current_user.interesses}
+
+        tags_contagem = {}
+
+        # 3. Usa o relacionamento REAL da sua Model: tags_afinidade
+        for post in posts_do_local:
+            if post.tags_afinidade:
+                for tag in post.tags_afinidade:
+                    if tag.id not in interesses_usuario_ids:
+                        if tag.id not in tags_contagem:
+                            tags_contagem[tag.id] = {
+                                'id': tag.id,
+                                'nome': tag.nome,
+                                'categoria': tag.categoria or 'Gosto',
+                                'total': 0
+                            }
+                        tags_contagem[tag.id]['total'] += 1
+
+        # 4. Ordenação Alfabética pura
+        lista_ordenada = sorted(tags_contagem.values(), key=lambda x: x['nome'].lower())
+        return jsonify(lista_ordenada)
+
+    except Exception as e:
+        print(f"\n[ERRO CRÍTICO] {str(e)}")
+        return jsonify({'erro': str(e)}), 500
+
+
+@app.route('/api/seguir_tag_direto/<int:tag_id>', methods=['POST'])
+@login_required
+def seguir_tag_direto(tag_id):
+    try:
+
+        tag = Taxonomia.query.get_or_404(tag_id)
+
+        if tag not in current_user.interesses:
+            current_user.interesses.append(tag)
+            database.session.commit()
+            return jsonify({'sucesso': True, 'mensagem': f'Agora você segue #{tag.nome}!'})
+
+        return jsonify({'sucesso': False, 'mensagem': 'Você já segue este tema.'})
+    except Exception as e:
+        database.session.rollback()
+        print(f"[ERRO FEEDIN] Falha ao seguir tag: {str(e)}")
+        return jsonify({'sucesso': False, 'mensagem': 'Erro ao salvar interesse.'}), 500
 
 
 @app.route('/salvar_grupo_social', methods=['POST', 'GET'])

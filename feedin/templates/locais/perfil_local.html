@@ -48,6 +48,17 @@
         .rating-badge { margin: 0 auto; }
         .d-flex.gap-2 { justify-content: center; flex-wrap: wrap; }
     }
+
+    .border-dashed {
+        border-style: dashed !important;
+        border-width: 1.5px !important;
+        background-color: #f8f9fa !important;
+    }
+    .border-dashed:hover {
+        background-color: #e9ecef !important;
+        border-color: #0d6efd !important;
+        color: #0d6efd !important;
+    }
 </style>
 
 {# HERO SECTION #}
@@ -133,14 +144,17 @@
                     </small>
                 </div>
 
-                {# Informa educadamente se houver publicações que pertencem ao local, mas exigem tags de subgrupo #}
+                {# Informa educadamente e convida para a ação via Modal #}
                 {% if total_atividades is defined and atividades|length < total_atividades %}
-                    <span class="badge bg-light text-secondary border shadow-sm p-2"
-                          style="font-size: 0.75rem; max-width: 320px; white-space: normal; text-align: left;"
-                          title="Algumas histórias contadas aqui foram direcionadas a subgrupos de interesses específicos que você não possui no seu perfil.">
-                        <i class="bi bi-info-circle-fill text-warning me-1"></i>
-                        Há publicações direcionadas ocultas.
-                    </span>
+                    <button type="button"
+                            onclick="abrirModalTagsOcultas({{ local.id }})"
+                            class="btn btn-sm btn-light text-secondary border shadow-sm p-2 d-flex align-items-center gap-2"
+                            style="font-size: 0.75rem; max-width: 320px; text-align: left; transition: all 0.2s; border-radius: 10px;"
+                            onmouseover="this.style.backgroundColor='#fff3cd'; this.style.borderColor='#ffecb5';"
+                            onmouseout="this.style.backgroundColor='#f8f9fa'; this.style.borderColor='#dee2e6';">
+                        <i class="bi bi-eye-slash-fill text-warning" style="font-size: 0.9rem;"></i>
+                        <span>Há histórias ocultas. <strong>Clique para explorar os temas.</strong></span>
+                    </button>
                 {% endif %}
             </div>
 
@@ -216,6 +230,30 @@
 </div>
 
 {% include "partials/_modal_comentarios.html" %}
+
+{# MODAL DE EXPLORAÇÃO DE TEMAS OCULTOS #}
+<div class="modal fade" id="modalTagsOcultas" tabindex="-1" aria-labelledby="modalTagsOcultasLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header border-0 pb-2">
+                <h6 class="modal-title fw-bold text-secondary" id="modalTagsOcultasLabel">
+                    <i class="bi bi-compass-fill text-primary me-1"></i> Desvendar Histórias
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body pt-0">
+                <p class="text-muted small mb-3">Estas são as memórias locais que você ainda não acompanha. Clique para passar a seguir o tema:</p>
+
+                {# A lista será populada dinamicamente via JS #}
+                <div id="lista-tags-ocultas" class="d-flex flex-column gap-2" style="max-height: 300px; overflow-y: auto; padding-right: 5px;">
+                    <div class="text-center py-3 text-muted small">
+                        <div class="spinner-border spinner-border-sm text-primary" role="status"></div> Buscando temas...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 
@@ -389,5 +427,77 @@ function prepararSeguirDireto(localId, localNome, evt) {
         }
     });
 }
+
+/**
+ * SISTEMA EXPLORADOR DE TAGS OCULTAS DO LOCAL
+ */
+function abrirModalTagsOcultas(localId) {
+    const $lista = $('#lista-tags-ocultas');
+    $lista.html('<div class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary"></div></div>');
+
+    const modalElement = document.getElementById('modalTagsOcultas');
+    const meuModal = new bootstrap.Modal(modalElement);
+    meuModal.show();
+
+    $.getJSON(`/api/local/${localId}/tags_ocultas`, function(tags) {
+        if (!tags.length) {
+            $lista.html('<p class="text-muted text-center small my-2">Nenhum tema oculto restante!</p>');
+            return;
+        }
+
+        $lista.empty();
+        tags.forEach(function(tag) {
+            // Garante a chamada global correta na página do local
+            const itemHtml = `
+                <button type="button" onclick="window.ativarEPassarASeguirTag(${tag.id}, this)"
+                        class="btn btn-outline-secondary btn-sm text-start w-100 px-3 py-2 d-flex justify-content-between align-items-center rounded-3 position-relative border-dashed"
+                        style="font-size: 0.85rem; transition: all 0.2s;">
+                    <span>
+                        <i class="bi bi-hash text-muted"></i><strong>${tag.nome}</strong>
+                    </span>
+                    <span class="badge bg-secondary-subtle text-secondary rounded-pill fw-bold" style="font-size: 0.7rem;">
+                        ${tag.total} ${tag.total > 1 ? 'posts' : 'post'}
+                    </span>
+                </button>
+            `;
+            $lista.append(itemHtml);
+        });
+    }).fail(function() {
+        $lista.html('<p class="text-danger text-center small my-2">Erro ao carregar temas.</p>');
+    });
+}
+
+// Escopo global na página do local para o clique do botão funcionar
+window.ativarEPassarASeguirTag = function(tagId, elementoBotao) {
+    if ($(elementoBotao).data('processando')) return;
+    $(elementoBotao).data('processando', true).prop('disabled', true).addClass('opacity-50');
+
+    const csrfToken = "{{ csrf_token() }}" || $('input[name=csrf_token]').val();
+
+    $.ajax({
+        url: `/api/seguir_tag_direto/${tagId}`,
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrfToken },
+        success: function(response) {
+            if (response.sucesso) {
+                $(elementoBotao).removeClass('btn-outline-secondary border-dashed')
+                                .addClass('btn-success text-white')
+                                .html('<span><i class="bi bi-check-lg me-1"></i> Tema Adicionado!</span>');
+
+                setTimeout(function() {
+                    location.reload();
+                }, 600);
+            } else {
+                alert(response.mensagem || "Não foi possível seguir este tema.");
+                $(elementoBotao).data('processando', false).prop('disabled', false).removeClass('opacity-50');
+            }
+        },
+        error: function(xhr) {
+            console.error("Erro no Ajax de seguir tag:", xhr.responseText);
+            alert("Erro de comunicação com o servidor ao salvar interesse.");
+            $(elementoBotao).data('processando', false).prop('disabled', false).removeClass('opacity-50');
+        }
+    });
+};
 </script>
 {% endblock %}

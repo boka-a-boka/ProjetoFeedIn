@@ -71,7 +71,8 @@
                 {% if eh_sistema %}
                     <i class="bi bi-stars text-primary me-1"></i> <strong>{{ texto | safe }}</strong>
                 {% else %}
-                    {{ texto | safe }}
+                    {# Aplica a formatação segura de Markdown (*negrito* e _itálico_) e emojis nos relatos #}
+                    {{ texto | formatar_postagem | safe }}
                 {% endif %}
             </div>
 
