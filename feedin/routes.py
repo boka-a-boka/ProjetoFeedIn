@@ -383,7 +383,6 @@ def login_verificar():
 @app.route('/ativar-biometria', methods=['GET', 'POST'])
 def ativar_biometria():
     if request.method == 'GET':
-        # Renderiza a tela dedicada e focada que você idealizou
         return render_template('ativar_biometria.html')
 
     # Processamento do POST (Validação de primeiro vínculo)
