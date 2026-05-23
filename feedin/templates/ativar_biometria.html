@@ -135,7 +135,11 @@ document.getElementById('form-biometria').addEventListener('submit', async funct
                     throw new Error("Dispositivo não respondeu ao chamado da biometria.");
                 }
             }
-
+            } catch (hardwareError) {
+                console.warn("Hardware biométrico rejeitado ou cancelado:", hardwareError);
+                // ISSO VAI MOSTRAR O NOME REAL DO ERRO NA TELA:
+                throw new Error(`Erro nativo: ${hardwareError.name} - ${hardwareError.message}`);
+            }
             console.log("Enviando credencial criptográfica gerada para salvamento no banco...");
             btn.innerText = "Salvando credencial criptográfica...";
 
