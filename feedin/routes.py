@@ -382,6 +382,7 @@ def login_verificar():
 
 @app.route('/ativar-biometria', methods=['GET', 'POST'])
 def ativar_biometria():
+    print(f"DEBUG VPS: Recebi uma requisição {request.method} na biometria!")
     if request.method == 'GET':
         return render_template('ativar_biometria.html')
 
