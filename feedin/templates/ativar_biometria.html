@@ -153,16 +153,22 @@ document.getElementById('form-biometria').addEventListener('submit', async funct
                 }
             };
 
-            const headersConclusao = { 'Content-Type': 'application/json' };
+            // ==================== TRECHO CORRIGIDO ====================
+            const headersConclusao = {
+                'Content-Type': 'application/json'
+            };
             if (csrfTokenInput && csrfTokenInput.value) {
                 headersConclusao['X-CSRFToken'] = csrfTokenInput.value;
             }
 
+            btn.innerText = "Salvando credencial no FeedIn...";
+
             const respostaServidor = await fetch('/concluir-cadastro-biometria', {
                 method: 'POST',
-                headers: headersConclusao,
+                headers: headersConclusao, // Enviando Content-Type E o Token CSRF juntos!
                 body: JSON.stringify(dadosParaEnviar)
             });
+            // ==========================================================
 
             if (!respostaServidor.ok) throw new Error("Erro ao salvar a credencial no servidor.");
             const resultadoFinal = await respostaServidor.json();
