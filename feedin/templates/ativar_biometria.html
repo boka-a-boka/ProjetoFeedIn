@@ -130,7 +130,7 @@ async function iniciarCadastroBiometrico() {
 
     try {
         // 2. Dispara a requisição para a sua rota exata na raiz
-        const resposta = await fetch('/ativar-biometria', {
+        const resposta = await fetch(`${window.location.origin}/ativar-biometria`, {
             method: 'POST',
             headers: headers,
             body: JSON.stringify(dadosParaEnvio)
