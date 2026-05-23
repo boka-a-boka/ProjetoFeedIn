@@ -394,15 +394,20 @@ def ativar_biometria():
     usuario = Usuario.query.filter_by(email=email).first()
 
     if usuario and bcrypt.check_password_hash(usuario.senha, senha):
-        # Gerar o desafio criptográfico (Challenge) que o hardware exige
-        challenge = base64.b64encode(os.urandom(32)).decode('utf-8').rstrip('=')
+        # Gerar o Challenge de forma segura e limpa para o ecossistema Mobile
+        challenge_bytes = os.urandom(32)
+        challenge = base64.urlsafe_b64encode(challenge_bytes).decode('utf-8').rstrip('=')
 
-        # Opções universais do WebAuthn (Funciona em iOS, Android, Windows e Mac)
+        # Codificar o User ID estritamente em Base64URL sem caracteres inválidos (+, / ou =)
+        user_id_str = str(usuario.id)
+        user_id_b64url = base64.urlsafe_b64encode(user_id_str.encode('utf-8')).decode('utf-8').rstrip('=')
+
+        # Opções universais do WebAuthn (Compatível com iOS, Android, Windows e Mac)
         registration_options = {
             "challenge": challenge,
             "rp": {"name": "FeedIn", "id": request.host.split(':')[0]},
             "user": {
-                "id": base64.b64encode(str(usuario.id).encode()).decode('utf-8').rstrip('='),
+                "id": user_id_b64url,
                 "name": usuario.email,
                 "displayName": usuario.username
             },

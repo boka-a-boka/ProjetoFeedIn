@@ -74,6 +74,57 @@
 </div>
 
 <script>
+// Biblioteca local com tratamento robusto para conversão de buffers
+const webauthnJson = (function() {
+    "use strict";
+
+    function t(e){
+        const t=new Uint8Array(e);let n="";
+        for(const e of t)n+=String.fromCharCode(e);
+        return btoa(n).replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,"")}
+
+    function n(e){
+        let t = e.replace(/-/g,"+").replace(/_/g,"/").trim();
+        while (t.length % 4) { t += '='; }
+        const n=(window.atob(t)+"\0\0\0\0\0\0\0").substring(0,4*(Math.ceil(t.length/4))),r=new Uint8Array(n.length);
+        for(let e=0;e<n.length;e++)r[e]=n.charCodeAt(e);
+        return r.buffer;
+    }
+
+    function r(e){
+        if(e instanceof ArrayBuffer)return t(e);
+        if(e instanceof Array)return e.map(r);
+        if("object"==typeof e&&null!==e){
+            const t={};
+            for(const n of Object.keys(e))t[n]=r(e[n]);
+            return t;
+        }
+        return e;
+    }
+
+    function o(e,t){
+        if("string"==typeof t)return n(t);
+        if(t instanceof Array)return t.map((t=>o(e,t)));
+        if("object"==typeof t&&null!===t){
+            const n={};
+            for(const r of Object.keys(t))n[r]=o(e+"."+r,t[r]);
+            return n;
+        }
+        return t;
+    }
+
+    return {
+        create: function(t) {
+            const n = o("publicKey", t);
+            return navigator.credentials.create({publicKey: n}).then((e => r(e)));
+        },
+        get: function(t) {
+            const n = o("publicKey", t);
+            return navigator.credentials.get({publicKey: n}).then((e => r(e)));
+        }
+    };
+})();
+
 document.getElementById('form-biometria').addEventListener('submit', async function(e) {
     e.preventDefault();
 
@@ -84,7 +135,7 @@ document.getElementById('form-biometria').addEventListener('submit', async funct
     const csrfTokenInput = document.querySelector('input[name="csrf_token"]');
 
     btn.disabled = true;
-    btn.innerText = "Validando dados no servidor...";
+    btn.innerText = "Validating...";
     erroDiv.classList.add('d-none');
 
     const headers = { 'Content-Type': 'application/json' };
@@ -99,28 +150,46 @@ document.getElementById('form-biometria').addEventListener('submit', async funct
             body: JSON.stringify({ email, senha })
         });
 
-        if (!resposta.ok) throw new Error(`Erro de resposta do servidor (Status ${resposta.status}).`);
+        if (!resposta.ok) throw new Error(`Erro no servidor (Status ${resposta.status}).`);
         const resultado = await resposta.json();
 
         if (resultado.status === 'erro') throw new Error(resultado.mensagem);
 
         if (resultado.status === 'sucesso' && resultado.options) {
+            btn.innerText = "Aguardando biometria...";
 
-            // --- BLOCO DE DIAGNÓSTICO DO JSON DO FLASK ---
-            const opt = resultado.options.publicKey || resultado.options;
+            // Garante o mapeamento correto independente de vir encapsulado ou não
+            const dadosPublicos = resultado.options.publicKey || resultado.options;
 
-            let diagnostico = "DEBUG - Dados recebidos do Flask:\n";
-            diagnostico += `• Challenge: "${opt.challenge || 'NÃO ENCONTRADO'}"\n`;
-            if (opt.user) {
-                diagnostico += `• User ID: "${opt.user.id || 'NÃO ENCONTRADO'}"\n`;
-                diagnostico += `• User Name: "${opt.user.name || 'NÃO ENCONTRADO'}"\n`;
-            } else {
-                diagnostico += `• Objeto 'user' não encontrado na raiz.\n`;
+            let respostaBiometrica;
+            try {
+                respostaBiometrica = await webauthnJson.create({ "publicKey": dadosPublicos });
+            } catch (hardwareError) {
+                throw new Error(`Erro nativo do dispositivo: [${hardwareError.name}] - ${hardwareError.message}`);
             }
-            diagnostico += "\nCopie essas linhas acima para vermos qual está inválida.";
 
-            // Força a exibição do conteúdo bruto na tela para análise
-            throw new Error(diagnostico);
+            btn.innerText = "Salvando credencial...";
+
+            const headersConclusao = { 'Content-Type': 'application/json' };
+            if (csrfTokenInput && csrfTokenInput.value) {
+                headersConclusao['X-CSRFToken'] = csrfTokenInput.value;
+            }
+
+            const respostaServidor = await fetch('/concluir-cadastro-biometria', {
+                method: 'POST',
+                headers: headersConclusao,
+                body: JSON.stringify(respostaBiometrica)
+            });
+
+            if (!respostaServidor.ok) throw new Error("Erro ao salvar no banco.");
+            const resultadoFinal = await respostaServidor.json();
+
+            if (resultadoFinal.status === 'sucesso') {
+                alert("Face ID / Biometria vinculada com sucesso no FeedIn!");
+                window.location.href = '/login';
+            } else {
+                throw new Error(resultadoFinal.mensagem || "Erro ao registrar credencial.");
+            }
         }
 
     } catch (error) {
