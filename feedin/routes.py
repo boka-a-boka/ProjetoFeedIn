@@ -453,17 +453,17 @@ def concluir_cadastro_biometria():
             return jsonify(
                 {"status": "erro", "mensagem": "Dados biométricos incompletos enviados pelo dispositivo."}), 400
 
-        # 2. Salva na sua tabela de chaves biométricas vinculada ao ID do usuário
-        # NOTA: Ajuste o nome do modelo 'BiometriaCredencial' e das colunas para bater com o seu banco.
-        nova_credencial = CredencialBiometrica(
-            usuario_id=usuario_id,
-            credential_id=credential_id,
-            public_key=public_key_b64,  # Guardamos a assinatura pública gerada pelo celular
-            device_name=request.user_agent.platform or "Dispositivo Móvel"
-        )
+            # ==================== CÓDIGO FINAL E LIMPO ====================
+            # 2. Salva na sua tabela de chaves biométricas vinculada ao ID do usuário
+            nova_credencial = CredencialBiometrica(
+                user_id=usuario_id,  # Ajustado para o nome real da coluna no banco
+                credential_id=credential_id,  # Com a letra 'c' corrigida
+                public_key=public_key_b64  # A assinatura pública em Base64
+            )
 
-        database.session.add(nova_credencial)
-        database.session.commit()
+            database.session.add(nova_credencial)
+            database.session.commit()
+            # ==============================================================
 
         # Limpa as variáveis temporárias da sessão pós-gravação bem-sucedida
         session.pop('biometria_challenge', None)
