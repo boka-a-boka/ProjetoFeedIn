@@ -453,7 +453,7 @@ def concluir_cadastro_biometria():
 
         # 2. Salva na sua tabela de chaves biométricas vinculada ao ID do usuário
         # NOTA: Ajuste o nome do modelo 'BiometriaCredencial' e das colunas para bater com o seu banco.
-        nova_credencial = BiometriaCredencial(
+        nova_credencial = CredencialBiometrica(
             usuario_id=usuario_id,
             credential_id=credential_id,
             public_key=public_key_b64,  # Guardamos a assinatura pública gerada pelo celular
@@ -486,21 +486,22 @@ def login_biometrico():
     if not credential_id:
         return jsonify({"status": "erro", "mensagem": "Nenhuma credencial informada."}), 400
 
-    # 1. Busca no banco se existe alguma biometria cadastrada com esse ID
-    credencial = BiometriaCredencial.query.filter_by(credential_id=credential_id).first()
+    try:
+        credencial = CredencialBiometrica.query.filter_by(credential_id=credential_id).first()
 
-    if credencial:
-        # 2. Se achou, localiza o dono dela
-        usuario = Usuario.query.get(credencial.usuario_id)
-        if usuario:
-            # 3. Loga o usuário diretamente na sessão do Flask
-            session['user_id'] = usuario.id
-            session['logged_in'] = True
+        if credencial:
+            # 2. Se achou, localiza o dono dela
+            usuario = Usuario.query.get(credencial.usuario_id)
+            if usuario:
+                # 3. Loga o usuário diretamente na sessão do Flask
+                session['user_id'] = usuario.id
+                session['logged_in'] = True
 
-            print(f"DEBUG VPS: Usuário {usuario.email} logado com sucesso via Face ID/Digital!")
-            return jsonify({"status": "sucesso", "redirecionar": "/dashboard"})  # Mude para a sua rota pós-login
+                print(f"DEBUG VPS: Usuário {usuario.email} logado com sucesso via Face ID/Digital!")
+                return jsonify({"status": "sucesso", "redirecionar": "/dashboard"})  # Mude para a sua rota pós-login
 
-    return jsonify({"status": "erro", "mensagem": "Biometria não reconhecida ou não vinculada a esta conta."}), 401
+        # Caso não encontre a credencial ou o usuário
+        return jsonify({"status": "erro", "mensagem": "Biometria não reconhecida ou não vinculada a esta conta."}), 401
 
     except Exception as e:
         database.session.rollback()
