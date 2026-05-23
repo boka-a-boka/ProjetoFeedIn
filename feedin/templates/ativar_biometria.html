@@ -74,8 +74,8 @@
     </div>
 </div>
 
-<!-- 1. IMPORTA A BIBLIOTECA AUXILIAR DO WEBAUTHN (Adicione isso logo ANTES do seu script) -->
-<script src="https://cdn.jsdelivr.net/npm/@github/webauthn-json@0.5.7/dist/esm/webauthn-json.browser-global.min.js"></script>
+<!-- Importação correta da biblioteca WebAuthn usando o empacotamento UMD global estável -->
+<script src="https://cdn.jsdelivr.net/npm/@github/webauthn-json@0.5.7/dist/umd/webauthn-json.js"></script>
 
 <script>
 document.getElementById('form-biometria').addEventListener('submit', async function(e) {
@@ -120,57 +120,61 @@ document.getElementById('form-biometria').addEventListener('submit', async funct
         // Caso de sucesso total: desafio gerado pelo Flask
         if (resultado.status === 'sucesso' && resultado.options) {
             console.log("Desafio recebido do Flask. Acionando hardware do dispositivo...");
+            btn.innerText = "Aguardando Face ID / Digital...";
 
-            // 1. Abre a janelinha nativa do Face ID/Digital do celular
-            webauthnJson.create({ "publicKey": resultado.options })
-                .then(function(respostaBiometrica) {
-                    console.log("Biometria escaneada! Enviando dados para salvamento...");
-                    btn.innerText = "Salvando credencial criptográfica...";
+            let respostaBiometrica;
+            try {
+                // 1. Abre a janelinha nativa do Face ID/Digital buscando explicitamente do escopo global window
+                respostaBiometrica = await window.webauthnJson.create({ "publicKey": resultado.options });
+                console.log("Biometria escaneada com sucesso!");
+            } catch (hardwareError) {
+                console.warn("Hardware biométrico rejeitado ou cancelado:", hardwareError);
+                if (hardwareError.name === 'NotAllowedError') {
+                    throw new Error("Operação cancelada ou tempo limite do Face ID esgotado.");
+                } else {
+                    throw new Error("Dispositivo não respondeu ao chamado da biometria.");
+                }
+            }
 
-                    // Configura o cabeçalho com CSRF
-                    const headersConclusao = { 'Content-Type': 'application/json' };
-                    if (csrfTokenInput && csrfTokenInput.value) {
-                        headersConclusao['X-CSRFToken'] = csrfTokenInput.value;
-                    }
+            console.log("Enviando credencial criptográfica gerada para salvamento no banco...");
+            btn.innerText = "Salvando credencial criptográfica...";
 
-                    // 2. Envia a resposta do hardware para a rota do Flask que criamos no Passo 1
-                    return fetch('/concluir-cadastro-biometria', {
-                        method: 'POST',
-                        headers: headersConclusao,
-                        body: JSON.stringify(respostaBiometrica)
-                    });
-                })
-                .then(res => res.json())
-                .then(resultadoFinal => {
-                    if (resultadoFinal.status === 'sucesso') {
-                        alert("Face ID / Biometria vinculada com sucesso no FeedIn!");
-                        // 3. Agora que está salvo no banco, quebramos o loop e avançamos!
-                        window.location.href = '/login';
-                    } else {
-                        alert("Erro no servidor: " + resultadoFinal.mensagem);
-                        btn.disabled = false;
-                        btn.innerText = "Validar e Ativar Biometria";
-                    }
-                })
-                .catch(function(erro) {
-                    console.error("Erro no hardware biométrico:", erro);
-                    alert("Acesso biométrico recusado ou cancelado.");
-                    btn.disabled = false;
-                    btn.innerText = "Validar e Ativar Biometria";
-                });
+            // Configura o cabeçalho com CSRF para a rota de conclusão
+            const headersConclusao = { 'Content-Type': 'application/json' };
+            if (csrfTokenInput && csrfTokenInput.value) {
+                headersConclusao['X-CSRFToken'] = csrfTokenInput.value;
+            }
+
+            // 2. Envia a resposta do hardware para a rota do Flask
+            const respostaServidor = await fetch('/concluir-cadastro-biometria', {
+                method: 'POST',
+                headers: headersConclusao,
+                body: JSON.stringify(respostaBiometrica)
+            });
+
+            if (!respostaServidor.ok) {
+                throw new Error(`Erro ao concluir cadastro no servidor (Status ${respostaServidor.status}).`);
+            }
+
+            const resultadoFinal = await respostaServidor.json();
+
+            if (resultadoFinal.status === 'sucesso') {
+                alert("Face ID / Biometria vinculada com sucesso no FeedIn!");
+                // 3. Agora que está salvo no banco, avançamos para o login limpo
+                window.location.href = '/login';
+            } else {
+                throw new Error(resultadoFinal.mensagem || "Erro interno do servidor ao registrar credencial.");
+            }
         }
 
     } catch (error) {
         console.error("Erro capturado no fluxo:", error);
 
-        // Se o usuário cancelar o Face ID, dá um feedback amigável em vez de travar tudo
-        if (error.name === 'NotAllowedError') {
-            erroDiv.innerText = "Operação cancelada ou tempo limite do Face ID esgotado.";
-        } else {
-            erroDiv.innerText = error.message || "Não foi possível processar o acesso biométrico.";
-        }
-
+        // Exibe o feedback amigável na interface
+        erroDiv.innerText = error.message || "Não foi possível processar o acesso biométrico.";
         erroDiv.classList.remove('d-none');
+
+        // Destrava os controles visuais
         btn.disabled = false;
         btn.innerText = "Validar e Ativar Biometria";
     }
