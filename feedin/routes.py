@@ -404,7 +404,7 @@ def ativar_biometria():
             "user": {
                 "id": base64.b64encode(str(usuario.id).encode()).decode('utf-8').rstrip('='),
                 "name": usuario.email,
-                "displayName": usuario.nome
+                "displayName": usuario.username
             },
             "pubKeyCredParams": [{"type": "public-key", "alg": -7}],  # ES256 (Algoritmo universal)
             "authenticatorSelection": {
