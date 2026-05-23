@@ -6,7 +6,7 @@
     <title>FeedIn - Ativar Acesso Biométrico</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
 
-    <!-- Biblioteca Oficial do WebAuthn (GitHub/W3C) para evitar erros de codificação -->
+    <!-- Biblioteca Oficial do WebAuthn (GitHub/W3C) -->
     <script src="https://cdn.jsdelivr.net/npm/@github/webauthn-json@0.5.7/dist/browser-global/webauthn-json.browser-global.min.js"></script>
 
     <style>
@@ -110,8 +110,8 @@ document.getElementById('form-biometria').addEventListener('submit', async funct
 
             let respostaBiometrica;
             try {
-                // A biblioteca oficial do GitHub processa e limpa as strings do Flask automaticamente
-                const optionsFormatadas = webauthnJson.parseCreationOptionsFromJSON(resultado.options);
+                // Correção do nome global da biblioteca para maiúsculo (webauthnJSON)
+                const optionsFormatadas = webauthnJSON.parseCreationOptionsFromJSON(resultado.options);
                 respostaBiometrica = await navigator.credentials.create(optionsFormatadas);
             } catch (hardwareError) {
                 throw new Error(`Erro nativo do dispositivo: [${hardwareError.name}] - ${hardwareError.message}`);
@@ -119,8 +119,8 @@ document.getElementById('form-biometria').addEventListener('submit', async funct
 
             btn.innerText = "Salvando credencial no FeedIn...";
 
-            // Transforma a resposta binária em formato JSON limpo antes de enviar ao Flask
-            const respostaParaOBackend = webauthnJson.formatCreateCredentialToJson(respostaBiometrica);
+            // Correção aqui também para formatar o JSON de envio de volta para o Flask
+            const respostaParaOBackend = webauthnJSON.formatCreateCredentialToJson(respostaBiometrica);
 
             const headersConclusao = { 'Content-Type': 'application/json' };
             if (csrfTokenInput && csrfTokenInput.value) {
