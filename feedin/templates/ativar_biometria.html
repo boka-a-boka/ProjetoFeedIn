@@ -74,13 +74,52 @@
 </div>
 
 <script>
-// Forçamos a declaração explícita da biblioteca direto no escopo do script
+// Biblioteca local ajustada para normalizar Base64/Base64URL e evitar InvalidCharacterError
 const webauthnJson = (function() {
     "use strict";
-    function t(e){const t=new Uint8Array(e);let n="";for(const e of t)n+=String.fromCharCode(e);return btoa(n).replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,"")}
-    function n(e){const t=e.replace(/-/g,"+").replace(/_/g,"/"),n=(window.atob(t)+"\0\0\0\0\0\0\0").substring(0,4*(Math.ceil(t.length/4))),r=new Uint8Array(n.length);for(let e=0;e<n.length;e++)r[e]=n.charCodeAt(e);return r.buffer}
-    function r(e){if(e instanceof ArrayBuffer)return t(e);if(e instanceof Array)return e.map(r);if("object"==typeof e&&null!==e){const t={};for(const n of Object.keys(e))t[n]=r(e[n]);return t}return e}
-    function o(e,t){if("string"==typeof t)return n(t);if(t instanceof Array)return t.map((t=>o(e,t)));if("object"==typeof t&&null!==t){const n={};for(const r of Object.keys(t))n[r]=o(e+"."+r,t[r]);return n}return t}
+
+    function t(e){
+        const t=new Uint8Array(e);let n="";
+        for(const e of t)n+=String.fromCharCode(e);
+        return btoa(n).replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,"")}
+
+    function n(e){
+        // Sanitiza a string removendo espaços e tratando preenchimentos incorretos
+        let t = e.replace(/-/g,"+").replace(/_/g,"/").trim();
+        while (t.length % 4) { t += '='; }
+
+        try {
+            const n=(window.atob(t)+"\0\0\0\0\0\0\0").substring(0,4*(Math.ceil(t.length/4))),r=new Uint8Array(n.length);
+            for(let e=0;e<n.length;e++)r[e]=n.charCodeAt(e);
+            return r.buffer;
+        } catch(err) {
+            console.error("Falha ao decodificar string base64:", t);
+            throw err;
+        }
+    }
+
+    function r(e){
+        if(e instanceof ArrayBuffer)return t(e);
+        if(e instanceof Array)return e.map(r);
+        if("object"==typeof e&&null!==e){
+            const t={};
+            for(const n of Object.keys(e))t[n]=r(e[n]);
+            return t;
+        }
+        return e;
+    }
+
+    function o(e,t){
+        if("string"==typeof t)return n(t);
+        if(t instanceof Array)return t.map((t=>o(e,t)));
+        if("object"==typeof t&&null!==t){
+            const n={};
+            for(const r of Object.keys(t))n[r]=o(e+"."+r,t[r]);
+            return n;
+        }
+        return t;
+    }
+
     return {
         create: function(t) {
             const n = o("publicKey", t);
@@ -116,7 +155,6 @@ document.getElementById('form-biometria').addEventListener('submit', async funct
     const dadosParaEnvio = { email: email, senha: senha };
 
     try {
-        // 1. Valida e-mail e senha no Flask e busca o desafio (challenge)
         const resposta = await fetch(`${window.location.origin}/ativar-biometria`, {
             method: 'POST',
             headers: headers,
@@ -140,7 +178,6 @@ document.getElementById('form-biometria').addEventListener('submit', async funct
             let respostaBiometrica;
 
             try {
-                // Chamada direta para a constante local blindada, sem passar por window
                 respostaBiometrica = await webauthnJson.create({ "publicKey": resultado.options });
                 console.log("Biometria capturada com sucesso!");
             } catch (hardwareError) {
@@ -156,7 +193,6 @@ document.getElementById('form-biometria').addEventListener('submit', async funct
                 headersConclusao['X-CSRFToken'] = csrfTokenInput.value;
             }
 
-            // 2. Envia a assinatura gerada para persistir no banco do VPS
             const respostaServidor = await fetch('/concluir-cadastro-biometria', {
                 method: 'POST',
                 headers: headersConclusao,
