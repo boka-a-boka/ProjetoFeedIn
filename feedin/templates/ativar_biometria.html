@@ -74,7 +74,7 @@
 </div>
 
 <script>
-// Biblioteca local com tratamento robusto para conversão de buffers
+// Biblioteca local robusta para lidar com decodificação de dados binários do WebAuthn
 const webauthnJson = (function() {
     "use strict";
 
@@ -105,7 +105,7 @@ const webauthnJson = (function() {
     function o(e,t){
         if("string"==typeof t)return n(t);
         if(t instanceof Array)return t.map((t=>o(e,t)));
-        if("object"==typeof t&&null!===t){
+        if("object"==typeof t&&null!==t){
             const n={};
             for(const r of Object.keys(t))n[r]=o(e+"."+r,t[r]);
             return n;
@@ -135,7 +135,7 @@ document.getElementById('form-biometria').addEventListener('submit', async funct
     const csrfTokenInput = document.querySelector('input[name="csrf_token"]');
 
     btn.disabled = true;
-    btn.innerText = "Validating...";
+    btn.innerText = "Validando dados...";
     erroDiv.classList.add('d-none');
 
     const headers = { 'Content-Type': 'application/json' };
@@ -156,19 +156,20 @@ document.getElementById('form-biometria').addEventListener('submit', async funct
         if (resultado.status === 'erro') throw new Error(resultado.mensagem);
 
         if (resultado.status === 'sucesso' && resultado.options) {
-            btn.innerText = "Aguardando biometria...";
+            btn.innerText = "Aguardando biometria do celular...";
 
-            // Garante o mapeamento correto independente de vir encapsulado ou não
+            // Captura o objeto publicKey vindo do Flask
             const dadosPublicos = resultado.options.publicKey || resultado.options;
 
             let respostaBiometrica;
             try {
+                // Aciona o Face ID / Touch ID do aparelho com os dados sanitizados
                 respostaBiometrica = await webauthnJson.create({ "publicKey": dadosPublicos });
             } catch (hardwareError) {
                 throw new Error(`Erro nativo do dispositivo: [${hardwareError.name}] - ${hardwareError.message}`);
             }
 
-            btn.innerText = "Salvando credencial...";
+            btn.innerText = "Salvando credencial no FeedIn...";
 
             const headersConclusao = { 'Content-Type': 'application/json' };
             if (csrfTokenInput && csrfTokenInput.value) {
@@ -181,7 +182,7 @@ document.getElementById('form-biometria').addEventListener('submit', async funct
                 body: JSON.stringify(respostaBiometrica)
             });
 
-            if (!respostaServidor.ok) throw new Error("Erro ao salvar no banco.");
+            if (!respostaServidor.ok) throw new Error("Erro ao salvar a credencial no servidor.");
             const resultadoFinal = await respostaServidor.json();
 
             if (resultadoFinal.status === 'sucesso') {
