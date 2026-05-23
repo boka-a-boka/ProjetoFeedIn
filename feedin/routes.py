@@ -423,6 +423,56 @@ def ativar_biometria():
     return jsonify({"status": "erro", "mensagem": "E-mail ou senha incorretos."}), 401
 
 
+import json
+
+
+@app.route('/concluir-cadastro-biometria', methods=['POST'])
+def concluir_cadastro_biometria():
+    """Recebe a chave criptográfica gerada pelo Face ID/Digital do celular e salva no banco"""
+    dados_resposta = request.get_json()
+    desafio_salvo = session.get('biometria_challenge')
+    user_id = session.get('biometria_user_id')
+
+    if not desafio_salvo or not user_id:
+        return jsonify({'status': 'erro', 'mensagem': 'Sessão de ativação expirada ou inválida.'}), 400
+
+    usuario = Usuario.query.get(user_id)
+    if not usuario:
+        return jsonify({'status': 'erro', 'mensagem': 'Usuário não encontrado.'}), 404
+
+    try:
+        # Extrai os dados essenciais que a biblioteca WebAuthn gerou no celular
+        # Nota: O WebAuthn entrega o ID da credencial e a Chave Pública.
+        credential_id = dados_resposta.get('id')
+
+        # Se você estiver usando a biblioteca fido2 para validar o registro:
+        # Aqui você extrairia a public_key do attestation_object.
+        # Em fase de testes/simplificada, armazenamos a resposta estruturada:
+        raw_id = dados_resposta.get('rawId')
+
+        # Cria o registro no banco associando ao usuário
+        nova_credencial = CredencialBiometrica(
+            user_id=usuario.id,
+            credential_id=credential_id,
+            # Importante: certifique-se de preencher os campos exigidos pelo seu modelo CredencialBiometrica:
+            public_key=dados_resposta.get('response', {}).get('attestationObject', 'chave_temporaria_teste'),
+            sign_count=0
+        )
+
+        database.session.add(nova_credencial)
+        database.session.commit()
+
+        # Limpa o desafio da sessão por segurança
+        session.pop('biometria_challenge', None)
+
+        return jsonify({'status': 'sucesso', 'mensagem': 'Biometria vinculada!'})
+
+    except Exception as e:
+        database.session.rollback()
+        print(f"Erro ao salvar credencial: {str(e)}")
+        return jsonify({'status': 'erro', 'mensagem': f'Falha ao registrar biometria no banco: {str(e)}'}), 500
+
+
 @app.route('/esqueci-senha', methods=['GET', 'POST'])
 def esqueci_senha():
     if request.method == 'POST':
