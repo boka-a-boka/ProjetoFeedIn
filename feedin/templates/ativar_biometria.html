@@ -74,68 +74,8 @@
 </div>
 
 <script>
-// Biblioteca local ajustada para normalizar Base64/Base64URL e evitar InvalidCharacterError
-const webauthnJson = (function() {
-    "use strict";
-
-    function t(e){
-        const t=new Uint8Array(e);let n="";
-        for(const e of t)n+=String.fromCharCode(e);
-        return btoa(n).replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,"")}
-
-    function n(e){
-        // Sanitiza a string removendo espaços e tratando preenchimentos incorretos
-        let t = e.replace(/-/g,"+").replace(/_/g,"/").trim();
-        while (t.length % 4) { t += '='; }
-
-        try {
-            const n=(window.atob(t)+"\0\0\0\0\0\0\0").substring(0,4*(Math.ceil(t.length/4))),r=new Uint8Array(n.length);
-            for(let e=0;e<n.length;e++)r[e]=n.charCodeAt(e);
-            return r.buffer;
-        } catch(err) {
-            console.error("Falha ao decodificar string base64:", t);
-            throw err;
-        }
-    }
-
-    function r(e){
-        if(e instanceof ArrayBuffer)return t(e);
-        if(e instanceof Array)return e.map(r);
-        if("object"==typeof e&&null!==e){
-            const t={};
-            for(const n of Object.keys(e))t[n]=r(e[n]);
-            return t;
-        }
-        return e;
-    }
-
-    function o(e,t){
-        if("string"==typeof t)return n(t);
-        if(t instanceof Array)return t.map((t=>o(e,t)));
-        if("object"==typeof t&&null!==t){
-            const n={};
-            for(const r of Object.keys(t))n[r]=o(e+"."+r,t[r]);
-            return n;
-        }
-        return t;
-    }
-
-    return {
-        create: function(t) {
-            const n = o("publicKey", t);
-            return navigator.credentials.create({publicKey: n}).then((e => r(e)));
-        },
-        get: function(t) {
-            const n = o("publicKey", t);
-            return navigator.credentials.get({publicKey: n}).then((e => r(e)));
-        }
-    };
-})();
-
 document.getElementById('form-biometria').addEventListener('submit', async function(e) {
     e.preventDefault();
-
-    console.log("Iniciando o processo de vínculo biométrico...");
 
     const email = document.getElementById('email').value;
     const senha = document.getElementById('senha').value;
@@ -152,73 +92,41 @@ document.getElementById('form-biometria').addEventListener('submit', async funct
         headers['X-CSRFToken'] = csrfTokenInput.value;
     }
 
-    const dadosParaEnvio = { email: email, senha: senha };
-
     try {
         const resposta = await fetch(`${window.location.origin}/ativar-biometria`, {
             method: 'POST',
             headers: headers,
-            body: JSON.stringify(dadosParaEnvio)
+            body: JSON.stringify({ email, senha })
         });
 
-        if (!resposta.ok) {
-            throw new Error(`Erro de resposta do servidor (Status ${resposta.status}).`);
-        }
-
+        if (!resposta.ok) throw new Error(`Erro de resposta do servidor (Status ${resposta.status}).`);
         const resultado = await resposta.json();
 
-        if (resultado.status === 'erro') {
-            throw new Error(resultado.mensagem);
-        }
+        if (resultado.status === 'erro') throw new Error(resultado.mensagem);
 
         if (resultado.status === 'sucesso' && resultado.options) {
-            console.log("Desafio recebido do Flask. Acionando hardware local...");
-            btn.innerText = "Aguardando Face ID / Digital...";
 
-            let respostaBiometrica;
+            // --- BLOCO DE DIAGNÓSTICO DO JSON DO FLASK ---
+            const opt = resultado.options.publicKey || resultado.options;
 
-            try {
-                respostaBiometrica = await webauthnJson.create({ "publicKey": resultado.options });
-                console.log("Biometria capturada com sucesso!");
-            } catch (hardwareError) {
-                console.warn("Hardware biométrico rejeitado:", hardwareError);
-                throw new Error(`Erro nativo do dispositivo: [${hardwareError.name}] - ${hardwareError.message}`);
-            }
-
-            console.log("Enviando credencial gerada para o banco de dados...");
-            btn.innerText = "Salvando credencial criptográfica...";
-
-            const headersConclusao = { 'Content-Type': 'application/json' };
-            if (csrfTokenInput && csrfTokenInput.value) {
-                headersConclusao['X-CSRFToken'] = csrfTokenInput.value;
-            }
-
-            const respostaServidor = await fetch('/concluir-cadastro-biometria', {
-                method: 'POST',
-                headers: headersConclusao,
-                body: JSON.stringify(respostaBiometrica)
-            });
-
-            if (!respostaServidor.ok) {
-                throw new Error(`Erro ao concluir cadastro no servidor (Status ${respostaServidor.status}).`);
-            }
-
-            const resultadoFinal = await respostaServidor.json();
-
-            if (resultadoFinal.status === 'sucesso') {
-                alert("Face ID / Biometria vinculada com sucesso no FeedIn!");
-                window.location.href = '/login';
+            let diagnostico = "DEBUG - Dados recebidos do Flask:\n";
+            diagnostico += `• Challenge: "${opt.challenge || 'NÃO ENCONTRADO'}"\n`;
+            if (opt.user) {
+                diagnostico += `• User ID: "${opt.user.id || 'NÃO ENCONTRADO'}"\n`;
+                diagnostico += `• User Name: "${opt.user.name || 'NÃO ENCONTRADO'}"\n`;
             } else {
-                throw new Error(resultadoFinal.mensagem || "Erro interno do servidor ao registrar credencial.");
+                diagnostico += `• Objeto 'user' não encontrado na raiz.\n`;
             }
+            diagnostico += "\nCopie essas linhas acima para vermos qual está inválida.";
+
+            // Força a exibição do conteúdo bruto na tela para análise
+            throw new Error(diagnostico);
         }
 
     } catch (error) {
-        console.error("Erro capturado no fluxo:", error);
-
-        erroDiv.innerText = error.message || "Não foi possível processar o acesso biométrico.";
+        console.error(error);
+        erroDiv.innerText = error.message;
         erroDiv.classList.remove('d-none');
-
         btn.disabled = false;
         btn.innerText = "Validar e Ativar Biometria";
     }
