@@ -58,13 +58,11 @@ function base64ToBufferCadastro(base64String) {
 
 async function iniciarCadastroBiometrico() {
     try {
-        // 1. Solicita o desafio para a VPS (Rota de ativação correta)
+        // 1. Solicita o desafio para a VPS na rota correta de ativação
         const respostaDesafio = await fetch('/ativar-biometria', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json' // Informa o formato esperado
-            },
-            body: JSON.stringify({}) // Envia um objeto vazio para não dar 400
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
         });
 
         if (!respostaDesafio.ok) {
@@ -80,7 +78,7 @@ async function iniciarCadastroBiometrico() {
             return;
         }
 
-        // 2. Prepara os requisitos tratando o Base64URL de forma segura
+        // 2. Prepara os requisitos tratando o Base64URL
         const opcionesCadastro = {
             publicKey: {
                 challenge: base64ToBufferCadastro(dadosDesafio.options.publicKey.challenge),
@@ -92,28 +90,21 @@ async function iniciarCadastroBiometrico() {
                 },
                 pubKeyCredParams: dadosDesafio.options.publicKey.pubKeyCredParams,
                 authenticatorSelection: dadosDesafio.options.publicKey.authenticatorSelection,
-                timeout: dadosDesafio.options.publicKey.timeout,
-                attestation: dadosDesafio.options.publicKey.attestation
+                timeout: 60000,
+                attestation: "none"
             }
         };
 
-        // Fecha o modal do Bootstrap para liberar a tela
-        const modalElement = document.getElementById('modalAtivarBiometria');
-        const modalInstance = bootstrap.Modal.getInstance(modalElement);
-        if (modalInstance) modalInstance.hide();
-
-// 3. Aciona o sensor físico (Face ID / Digital) - A TELA DO SENSOR SOBE COM O MODAL AINDA ABERTO POR TRÁS
+        // 3. Aciona o sensor físico (Windows Hello / Touch ID do Notebook)
         const novaChaveCriada = await navigator.credentials.create(opcionesCadastro);
 
-        // Se o usuário cancelou no dedômetro ou no sensor, o código cai direto no catch(err) lá embaixo.
-        // Se chegou aqui, significa que o sensor leu a biometria com SUCESSO!
-
-        // Agora sim, fechamos o modal de forma segura porque o sensor já terminou o trabalho dele
+        // SE CHEGOU AQUI, O USUÁRIO AUTENTICOU COM SUCESSO NO SENSOR.
+        // Agora fechamos o modal de forma limpa:
         const modalElement = document.getElementById('modalAtivarBiometria');
         const modalInstance = bootstrap.Modal.getInstance(modalElement);
         if (modalInstance) modalInstance.hide();
 
-        // 4. Embala a resposta em Base64 padrão para a VPS aceitar
+        // 4. Embala a resposta em Base64 padrão
         const dadosParaSalvar = {
             id: novaChaveCriada.id,
             rawId: novaChaveCriada.id,
@@ -124,7 +115,7 @@ async function iniciarCadastroBiometrico() {
             }
         };
 
-        // 5. Envia os dados embalados para gravação na tabela do banco
+        // 5. Envia para salvar na VPS
         const respostaSalvamento = await fetch('/concluir-cadastro-biometria', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -134,7 +125,7 @@ async function iniciarCadastroBiometrico() {
         const resultadoFinal = await respostaSalvamento.json();
 
         if (resultadoFinal.status === 'sucesso') {
-            alert("Face ID / Biometria vinculada com sucesso no FeedIn!");
+            alert("Biometria vinculada com sucesso!");
             window.location.reload();
         } else {
             alert("Erro ao salvar no servidor: " + resultadoFinal.mensagem);
