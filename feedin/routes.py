@@ -396,59 +396,45 @@ from feedin.models import Usuario, CredencialBiometrica
 # 1. CADASTRO: GERAR DESAFIO (ÁREA LOGADA) - CORRIGIDO!
 # ==========================================
 @app.route('/ativar-biometria', methods=['POST'])
-@login_required  # Garante que o usuário está logado na sessão ativa
+@csrf.exempt  # <--- ISSO É VITAL para o fetch do JavaScript funcionar
+@login_required
 def ativar_biometria():
-    usuario = current_user  # Captura o usuário logado diretamente pelo sistema
-
-    if not usuario:
-        return jsonify({"status": "erro", "mensagem": "Usuário não autenticado no sistema."}), 401
+    # Ignoramos qualquer dado vindo do JS. Usamos APENAS o usuário da sessão.
+    usuario = current_user
 
     try:
-        # 1. Gera um desafio aleatório seguro de 32 bytes
+        # Gera o desafio (Challenge)
         challenge_bytes = os.urandom(32)
-        # Converte para Base64URL sem preenchimento (=)
         challenge = base64.urlsafe_b64encode(challenge_bytes).decode('utf-8').rstrip('=')
 
-        # 2. Garante que o ID do usuário seja tratado como string e convertido para Base64URL limpo
+        # ID do usuário (vindo do banco pela sessão)
         user_id_str = str(usuario.id)
         user_id_b64url = base64.urlsafe_b64encode(user_id_str.encode('utf-8')).decode('utf-8').rstrip('=')
 
-        # 3. Monta a estrutura W3C idêntica ao que o seu JavaScript espera receber
+        # Opções para o sensor do aparelho
         registration_options = {
             "publicKey": {
                 "challenge": challenge,
-                "rp": {
-                    "name": "FeedIn", 
-                    "id": request.host.split(':')[0]  # Pega o domínio automaticamente (feedin.boka-a-boka.com.br)
-                },
+                "rp": {"name": "FeedIn", "id": request.host.split(':')[0]},
                 "user": {
                     "id": user_id_b64url,
                     "name": usuario.email,
                     "displayName": usuario.username or usuario.email
                 },
-                "pubKeyCredParams": [
-                    {"type": "public-key", "alg": -7},   # ES256 (iPhone / Android moderno)
-                    {"type": "public-key", "alg": -257}  # RS256 (Windows Hello)
-                ],
-                "authenticatorSelection": {
-                    "userVerification": "preferred",
-                    "residentKey": "preferred"
-                },
+                "pubKeyCredParams": [{"type": "public-key", "alg": -7}, {"type": "public-key", "alg": -257}],
+                "authenticatorSelection": {"userVerification": "preferred"},
                 "timeout": 60000,
                 "attestation": "none"
             }
         }
 
-        # Salva o desafio temporário na sessão do Flask para validar na conclusão
         session['biometria_challenge'] = challenge
         session['biometria_user_id'] = usuario.id
 
-        # Devolve o JSON puro e limpo que o seu JS vai ler sem quebrar
         return jsonify({"status": "sucesso", "options": registration_options})
 
     except Exception as e:
-        # Se algo falhar no servidor, devolve um JSON de erro em vez de quebrar a página em HTML
-        return jsonify({"status": "erro", "mensagem": f"Erro interno no servidor: {str(e)}"}), 500
+        return jsonify({"status": "erro", "mensagem": str(e)}), 500
 
 
 # ==========================================

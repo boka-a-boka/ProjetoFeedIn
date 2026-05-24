@@ -59,7 +59,13 @@ function base64ToBufferCadastro(base64String) {
 async function iniciarCadastroBiometrico() {
     try {
         // 1. Solicita o desafio para a VPS (Rota de ativação correta)
-        const respostaDesafio = await fetch('/ativar-biometria', { method: 'POST' });
+        const respostaDesafio = await fetch('/ativar-biometria', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json' // Informa o formato esperado
+            },
+            body: JSON.stringify({}) // Envia um objeto vazio para não dar 400
+        });
 
         if (!respostaDesafio.ok) {
             const erroDados = await respostaDesafio.json();
