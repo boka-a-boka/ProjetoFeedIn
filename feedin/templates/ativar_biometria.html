@@ -125,7 +125,8 @@ document.getElementById('form-biometria').addEventListener('submit', async funct
         if (resultado.status === 'sucesso' && resultado.options) {
             btn.innerText = "Aguardando biometria do celular...";
 
-            const opt = resultado.options.publicKey || resultado.options;
+            // AJUSTE CIRÚRGICO: Extrai estritamente o nó interno para evitar duplicação no hardware
+            const opt = resultado.options.publicKey;
 
             // Conversão dos dados de texto para ArrayBuffer exigido pelo navegador
             opt.challenge = ueb64ParaBytes(opt.challenge);
@@ -135,7 +136,7 @@ document.getElementById('form-biometria').addEventListener('submit', async funct
 
             let credencialNativa;
             try {
-                // Aciona o sensor biométrico do aparelho
+                // Aciona o sensor biométrico do aparelho usando a estrutura limpa
                 credencialNativa = await navigator.credentials.create({ publicKey: opt });
             } catch (hardwareError) {
                 throw new Error(`Erro nativo do dispositivo: [${hardwareError.name}] - ${hardwareError.message}`);
@@ -153,7 +154,6 @@ document.getElementById('form-biometria').addEventListener('submit', async funct
                 }
             };
 
-            // ==================== TRECHO CORRIGIDO ====================
             const headersConclusao = {
                 'Content-Type': 'application/json'
             };
@@ -161,14 +161,11 @@ document.getElementById('form-biometria').addEventListener('submit', async funct
                 headersConclusao['X-CSRFToken'] = csrfTokenInput.value;
             }
 
-            btn.innerText = "Salvando credencial no FeedIn...";
-
             const respostaServidor = await fetch('/concluir-cadastro-biometria', {
                 method: 'POST',
-                headers: headersConclusao, // Enviando Content-Type E o Token CSRF juntos!
+                headers: headersConclusao,
                 body: JSON.stringify(dadosParaEnviar)
             });
-            // ==========================================================
 
             if (!respostaServidor.ok) throw new Error("Erro ao salvar a credencial no servidor.");
             const resultadoFinal = await respostaServidor.json();
