@@ -446,16 +446,24 @@ def concluir_cadastro_biometria():
         return jsonify({"status": "erro", "mensagem": "Sessão expirada ou inválida. Recomece o processo."}), 400
 
     try:
-        # 1. Coleta os dados que o JavaScript enviou do hardware do celular
+        # 1. Coleta os dados que o JavaScript enviou
         credential_id = dados.get('rawId')
         public_key_b64 = dados.get('response', {}).get('attestationObject')
         client_data_json_b64 = dados.get('response', {}).get('clientDataJSON')
 
         if not credential_id or not public_key_b64:
-            return jsonify({"status": "erro", "mensagem": "Dados biométricos incompletos enviados pelo dispositivo."}), 400
+            return jsonify({"status": "erro", "mensagem": "Dados biométricos incompletos enviados."}), 400
 
-        # ==================== O SEU FLUXO ORIGINAL DE GRAVAÇÃO ====================
-        # (Aqui o Flask usa a 'nova_credencial' que você já configurou na lógica do seu app)
+        # ==================== INSTANCIAÇÃO DA CLASSE CORRETA ====================
+        # Criamos o objeto populando o user_id da sessão e os dados do hardware
+        nova_credencial = CredencialBiometrica(
+            user_id=usuario_id,
+            credential_id=credential_id,
+            public_key=public_key_b64,
+            sign_count=0
+        )
+        # ========================================================================
+
         database.session.add(nova_credencial)
         database.session.commit()
 
@@ -478,21 +486,17 @@ def concluir_cadastro_biometria():
 
 
 @app.route('/login-biometria-challenge', methods=['POST'])
-@login_required  # <-- Garante que só quem está logado acessa
+@login_required
 def login_biometrico_desafio():
-    # 1. Gera o código aleatório de segurança
-    challenge = os.urandom(32)
-    challenge_b64 = base64.b64encode(challenge).decode('utf-8').replace('=', '')
+    challenge_bytes = os.urandom(32)
+    # Alinhando 100% com o padrão urlsafe do cadastro:
+    challenge_b64 = base64.urlsafe_b64encode(challenge_bytes).decode('utf-8').rstrip('=')
 
-    # Salva na sessão temporária para conferirmos no próximo passo
     session['login_challenge'] = challenge_b64
-
-    # Captura o domínio atual dinamicamente (ex: 'feedin.com.br' ou 'localhost')
     rp_id = request.host.split(':')[0]
 
-    # 2. BUSCA AS CREDENCIAIS DO USUÁRIO LOGADO DIRETO DA SESSÃO
-    # Sem buscas por e-mail, sem inputs. Direto e seguro pelo ID do current_user
-    credenciais_usuario = ChaveBiometrica.query.filter_by(usuario_id=current_user.id).all()
+    # Corrigindo a classe para CredencialBiometrica e a coluna para user_id
+    credenciais_usuario = CredencialBiometrica.query.filter_by(user_id=current_user.id).all()
     credential_ids = [c.credential_id for c in credenciais_usuario]
 
     if not credential_ids:
@@ -501,7 +505,6 @@ def login_biometrico_desafio():
             "mensagem": "Nenhuma chave biométrica cadastrada para a sua conta neste dispositivo."
         }), 400
 
-    # 3. Devolve a estrutura para o front-end
     return jsonify({
         "status": "sucesso",
         "challenge": challenge_b64,
@@ -565,7 +568,7 @@ def verificar_login_biometria():
     try:
         # 2. BUSCA A CHAVE CORRESPONDENTE NO BANCO
         # Buscamos a credencial que possui a ID enviada pelo hardware
-        credencial = ChaveBiometrica.query.filter_by(credential_id=credential_id).first()
+        credencial = CredencialBiometrica.query.filter_by(credential_id=credential_id).first()
 
         if not credencial:
             print(f"DEBUG VPS: Chave ID {credential_id[:10]}... não encontrada no banco.")
