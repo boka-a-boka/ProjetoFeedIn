@@ -1,6 +1,6 @@
 from flask import (url_for, redirect, render_template, flash, session, request,
                    abort, Response, jsonify, current_app, send_from_directory, Blueprint)
-from feedin import app, database, bcrypt
+from feedin import app, database, bcrypt, csrf
 from flask_mail import Mail, Message
 from flask_login import login_required, login_user, logout_user, current_user
 from feedin.forms import FormLogin, FormNewUser, FormPerfil, FormApelido, FormConvite, FormConexao
@@ -20,7 +20,7 @@ from webauthn import (generate_registration_options, verify_registration_respons
                       generate_authentication_options, verify_authentication_response)
 from webauthn.helpers.structs import PublicKeyCredentialDescriptor
 
-from flask_wtf.csrf import CSRFProtect
+from flask_wtf.csrf import validate_csrf
 
 biometria_bp = Blueprint('biometria', __name__)
 
@@ -395,6 +395,7 @@ from feedin.models import Usuario, CredencialBiometrica
 # 1. CADASTRO: GERAR DESAFIO (ÁREA LOGADA)
 # ==========================================
 @app.route('/ativar-biometria', methods=['GET', 'POST'])
+@csrf.exempt
 @login_required  # Ideal que seja na área logada
 def ativar_biometria():
     if request.method == 'GET':
@@ -451,6 +452,7 @@ def ativar_biometria():
 # 2. CADASTRO: SALVAR NO BANCO
 # ==========================================
 @app.route('/concluir-cadastro-biometria', methods=['POST'])
+@csrf.exempt
 def concluir_cadastro_biometria():
     dados = request.get_json() or {}
     usuario_id = session.get('biometria_user_id')
