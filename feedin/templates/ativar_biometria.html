@@ -102,8 +102,16 @@ async function iniciarCadastroBiometrico() {
         const modalInstance = bootstrap.Modal.getInstance(modalElement);
         if (modalInstance) modalInstance.hide();
 
-        // 3. Aciona o sensor físico (Face ID / Digital)
+// 3. Aciona o sensor físico (Face ID / Digital) - A TELA DO SENSOR SOBE COM O MODAL AINDA ABERTO POR TRÁS
         const novaChaveCriada = await navigator.credentials.create(opcionesCadastro);
+
+        // Se o usuário cancelou no dedômetro ou no sensor, o código cai direto no catch(err) lá embaixo.
+        // Se chegou aqui, significa que o sensor leu a biometria com SUCESSO!
+
+        // Agora sim, fechamos o modal de forma segura porque o sensor já terminou o trabalho dele
+        const modalElement = document.getElementById('modalAtivarBiometria');
+        const modalInstance = bootstrap.Modal.getInstance(modalElement);
+        if (modalInstance) modalInstance.hide();
 
         // 4. Embala a resposta em Base64 padrão para a VPS aceitar
         const dadosParaSalvar = {
@@ -116,7 +124,7 @@ async function iniciarCadastroBiometrico() {
             }
         };
 
-        // 5. Envia os dados embalados para gravação na tabela
+        // 5. Envia os dados embalados para gravação na tabela do banco
         const respostaSalvamento = await fetch('/concluir-cadastro-biometria', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
