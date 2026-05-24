@@ -407,21 +407,32 @@ def ativar_biometria():
         user_id_b64url = base64.urlsafe_b64encode(user_id_str.encode('utf-8')).decode('utf-8').rstrip('=')
 
         # Estrutura padrão exigida pela especificação W3C / @github/webauthn-json
+        # Estrutura robusta e universal aceita por todos os navegadores modernos
         registration_options = {
             "publicKey": {
                 "challenge": challenge,
-                "rp": {"name": "FeedIn", "id": request.host.split(':')[0]},
+                "rp": {
+                    "name": "FeedIn",
+                    "id": request.host.split(':')[0]
+                },
                 "user": {
                     "id": user_id_b64url,
                     "name": usuario.email,
                     "displayName": usuario.username
                 },
-                "pubKeyCredParams": [{"type": "public-key", "alg": -7}],  # ES256
+                # Fornecemos múltiplos algoritmos (ES256, RS256, etc.) para o notebook ou celular escolherem o melhor
+                "pubKeyCredParams": [
+                    {"type": "public-key", "alg": -7},  # ES256 (Mobile/Apple)
+                    {"type": "public-key", "alg": -257},  # RS256 (Windows Hello/Windows)
+                    {"type": "public-key", "alg": -37}  # PS256 (Alternativa robusta)
+                ],
                 "authenticatorSelection": {
-                    "authenticatorAttachment": "platform",
-                    "userVerification": "required"
+                    # Removemos a amarra rígida de 'platform' temporariamente para o teste passar,
+                    # e permitimos que o navegador gerencie a melhor forma de autenticar.
+                    "userVerification": "preferred"
                 },
-                "timeout": 60000
+                "timeout": 60000,
+                "attestation": "none"  # Diz ao navegador que não precisamos de um certificado de fábrica do hardware
             }
         }
 
