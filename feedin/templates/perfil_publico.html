@@ -494,7 +494,15 @@ function base64ToBufferCadastro(base64String) {
 
 async function iniciarCadastroBiometrico() {
     try {
-        const respostaDesafio = await fetch('/login-biometria-challenge', { method: 'POST' });
+        // 1. SOLICITA O DESAFIO DIRETAMENTE NA ROTA DE ATIVAÇÃO/CADASTRO
+        const respostaDesafio = await fetch('/ativar-biometria', { method: 'POST' });
+
+        if (!respostaDesafio.ok) {
+            const erroDados = await respostaDesafio.json();
+            alert("Erro: " + (erroDados.mensagem || "Não foi possível iniciar o cadastro."));
+            return;
+        }
+
         const dadosDesafio = await respostaDesafio.json();
 
         if (dadosDesafio.status === 'erro') {
@@ -502,36 +510,43 @@ async function iniciarCadastroBiometrico() {
             return;
         }
 
+        // 2. PREPARA OS REQUISITOS COM OS DADOS DINÂMICOS VINDOS DO PYTHON
         const opcionesCadastro = {
             publicKey: {
-                challenge: base64ToBufferCadastro(dadosDesafio.challenge),
-                rp: { name: "FeedIn", id: window.location.hostname },
+                challenge: base64ToBufferCadastro(dadosDesafio.options.publicKey.challenge),
+                rp: dadosDesafio.options.publicKey.rp,
                 user: {
-                    id: new Uint8Array([1, 2, 3, 4]),
-                    name: "Dono do Perfil",
-                    displayName: "Usuário FeedIn"
+                    id: base64ToBufferCadastro(dadosDesafio.options.publicKey.user.id),
+                    name: dadosDesafio.options.publicKey.user.name,
+                    displayName: dadosDesafio.options.publicKey.user.displayName
                 },
-                pubKeyCredParams: [{ type: "public-key", alg: -7 }],
-                timeout: 60000,
-                attestation: "none"
+                pubKeyCredParams: dadosDesafio.options.publicKey.pubKeyCredParams,
+                authenticatorSelection: dadosDesafio.options.publicKey.authenticatorSelection,
+                timeout: dadosDesafio.options.publicKey.timeout,
+                attestation: dadosDesafio.options.publicKey.attestation
             }
         };
 
+        // Fecha o modal do Bootstrap para liberar a tela pro sensor do aparelho
         const modalElement = document.getElementById('modalAtivarBiometria');
         const modalInstance = bootstrap.Modal.getInstance(modalElement);
         if (modalInstance) modalInstance.hide();
 
-        const novaChaveCriada = await navigator.credentials.create(opcoesCadastro);
+        // 3. ACIONA O SENSOR FÍSICO DO DISPOSITIVO (Face ID / Digital)
+        const novaChaveCriada = await navigator.credentials.create(opcionesCadastro);
 
+        // 4. EMBALA A RESPOSTA CRIPTOGRAFADA DO SENSOR (Usa a mesma lógica robusta do seu outro script)
         const dadosParaSalvar = {
             id: novaChaveCriada.id,
-            rawId: btoa(String.fromCharCode.apply(null, new Uint8Array(novaChaveCriada.rawId))),
+            rawId: novaChaveCriada.id,
+            type: novaChaveCriada.type,
             response: {
                 attestationObject: btoa(String.fromCharCode.apply(null, new Uint8Array(novaChaveCriada.response.attestationObject))),
                 clientDataJSON: btoa(String.fromCharCode.apply(null, new Uint8Array(novaChaveCriada.response.clientDataJSON)))
             }
         };
 
+        // 5. ENVIA PARA A VPS GRAVAR DEFINITIVAMENTE NO BANCO
         const respostaSalvamento = await fetch('/concluir-cadastro-biometria', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -542,7 +557,7 @@ async function iniciarCadastroBiometrico() {
 
         if (resultadoFinal.status === 'sucesso') {
             alert("Face ID / Biometria vinculada com sucesso no FeedIn!");
-            window.location.href = '/feed';
+            window.location.reload(); // Recarrega a página para atualizar o status do cofre
         } else {
             alert("Erro ao salvar no servidor: " + resultadoFinal.mensagem);
         }
