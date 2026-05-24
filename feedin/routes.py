@@ -396,7 +396,7 @@ from feedin.models import Usuario, CredencialBiometrica
 # ==========================================
 @app.route('/ativar-biometria', methods=['GET', 'POST'])
 @login_required  # Ideal que seja na área logada
-def activar_biometria():
+def ativar_biometria():
     if request.method == 'GET':
         return render_template('ativar_biometria.html')
 
@@ -418,7 +418,10 @@ def activar_biometria():
         registration_options = {
             "publicKey": {
                 "challenge": challenge,
-                "rp": {"name": "FeedIn", "id": request.host.split(':')[0]},
+
+                # ALTERE ESTA LINHA ABAIXO:
+                "rp": {"name": "FeedIn", "id": "feedin.boka-a-boka.com.br"},
+
                 "user": {
                     "id": user_id_b64url,
                     "name": usuario.email,
@@ -497,7 +500,7 @@ def login_biometrico_desafio():
     challenge_b64 = base64.urlsafe_b64encode(challenge_bytes).decode('utf-8').rstrip('=')
 
     session['login_challenge'] = challenge_b64
-    rp_id = request.host.split(':')[0]
+    rp_id = "feedin.boka-a-boka.com.br"
 
     # Busca amarrada à sua classe real
     credenciais_usuario = CredencialBiometrica.query.filter_by(user_id=current_user.id).all()
