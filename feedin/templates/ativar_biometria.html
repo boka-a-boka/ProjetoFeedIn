@@ -71,7 +71,7 @@
 </div>
 
 <script>
-// Conversores corrigidos para a sintaxe nativa do JavaScript (function)
+// Conversores robustos Base64URL <-> ArrayBuffer
 function ueb64ParaBytes(strBase64Url) {
     let base64 = strBase64Url.replace(/-/g, '+').replace(/_/g, '/');
     while (base64.length % 4) { base64 += '='; }
@@ -111,6 +111,7 @@ document.getElementById('form-biometria').addEventListener('submit', async funct
     }
 
     try {
+        // Passo 1: Pede as opções à VPS
         const resposta = await fetch(`${window.location.origin}/ativar-biometria`, {
             method: 'POST',
             headers: headers,
@@ -123,12 +124,12 @@ document.getElementById('form-biometria').addEventListener('submit', async funct
         if (resultado.status === 'erro') throw new Error(resultado.mensagem);
 
         if (resultado.status === 'sucesso' && resultado.options) {
-            btn.innerText = "Aguardando biometria do celular...";
+            btn.innerText = "Aguardando hardware...";
 
-            // AJUSTE CIRÚRGICO: Extrai estritamente o nó interno para evitar duplicação no hardware
+            // Captura cirúrgica do nó publicKey vindo do Python
             const opt = resultado.options.publicKey;
 
-            // Conversão dos dados de texto para ArrayBuffer exigido pelo navegador
+            // Transforma os textos em buffers binários exigidos pela W3C
             opt.challenge = ueb64ParaBytes(opt.challenge);
             if (opt.user && opt.user.id) {
                 opt.user.id = ueb64ParaBytes(opt.user.id);
@@ -136,17 +137,17 @@ document.getElementById('form-biometria').addEventListener('submit', async funct
 
             let credencialNativa;
             try {
-                // Aciona o sensor biométrico do aparelho usando a estrutura limpa
+                // Aciona o sensor físico do computador / celular
                 credencialNativa = await navigator.credentials.create({ publicKey: opt });
             } catch (hardwareError) {
-                throw new Error(`Erro nativo do dispositivo: [${hardwareError.name}] - ${hardwareError.message}`);
+                // Captura o motivo exato se o navegador rejeitar o objeto
+                throw new Error(`[${hardwareError.name}] - ${hardwareError.message}`);
             }
 
-            btn.innerText = "Salvando credencial no FeedIn...";
-
+            // Embala os dados binários de volta para texto para o Python salvar
             const dadosParaEnviar = {
                 id: credencialNativa.id,
-                rawId: bytesParaUeb64(credencialNativa.rawId),
+                rawId: credencialNativa.id, // O ID textual direto serve perfeitamente como chave primária alternada
                 type: credencialNativa.type,
                 response: {
                     attestationObject: bytesParaUeb64(credencialNativa.response.attestationObject),
@@ -154,27 +155,26 @@ document.getElementById('form-biometria').addEventListener('submit', async funct
                 }
             };
 
-            const headersConclusao = {
-                'Content-Type': 'application/json'
-            };
+            const headersConclusao = { 'Content-Type': 'application/json' };
             if (csrfTokenInput && csrfTokenInput.value) {
                 headersConclusao['X-CSRFToken'] = csrfTokenInput.value;
             }
 
+            btn.innerText = "Salvando no banco...";
             const respostaServidor = await fetch('/concluir-cadastro-biometria', {
                 method: 'POST',
                 headers: headersConclusao,
                 body: JSON.stringify(dadosParaEnviar)
             });
 
-            if (!respostaServidor.ok) throw new Error("Erro ao salvar a credencial no servidor.");
+            if (!respostaServidor.ok) throw new Error("Erro ao salvar a credencial na VPS.");
             const resultadoFinal = await respostaServidor.json();
 
             if (resultadoFinal.status === 'sucesso') {
-                alert("Face ID / Biometria vinculada com sucesso no FeedIn!");
+                alert("Biometria vinculada com sucesso!");
                 window.location.href = '/feed';
             } else {
-                throw new Error(resultadoFinal.mensagem || "Erro ao registrar credencial.");
+                throw new Error(resultadoFinal.mensagem || "Erro no registro.");
             }
         }
 

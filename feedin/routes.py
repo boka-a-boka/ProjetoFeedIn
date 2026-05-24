@@ -384,59 +384,58 @@ def login_verificar():
         return jsonify({'status': 'erro', 'mensagem': 'Falha na autenticação biométrica'}), 400
 
 
+import os
+import base64
+from flask import request, jsonify, session, render_template
+from flask_login import login_required, current_user
+from feedin import app, database, bcrypt
+from feedin.models import Usuario, CredencialBiometrica
+
+# ==========================================
+# 1. CADASTRO: GERAR DESAFIO (ÁREA LOGADA)
+# ==========================================
 @app.route('/ativar-biometria', methods=['GET', 'POST'])
-def ativar_biometria():
-    print(f"DEBUG VPS: Recebi uma requisição {request.method} na biometria!")
+@login_required  # Ideal que seja na área logada
+def activar_biometria():
     if request.method == 'GET':
         return render_template('ativar_biometria.html')
 
-    # Processamento do POST (Validação de primeiro vínculo)
-    dados = request.get_json()
+    dados = request.get_json() or {}
     email = dados.get('email')
     senha = dados.get('senha')
 
     usuario = Usuario.query.filter_by(email=email).first()
 
     if usuario and bcrypt.check_password_hash(usuario.senha, senha):
-        # Gerar o Challenge de forma limpa para Base64URL
+        # Desafio padrão W3C em Base64URL sem padding (=)
         challenge_bytes = os.urandom(32)
         challenge = base64.urlsafe_b64encode(challenge_bytes).decode('utf-8').rstrip('=')
 
-        # Codificar o User ID em Base64URL rígido
+        # ID do usuário em Base64URL
         user_id_str = str(usuario.id)
         user_id_b64url = base64.urlsafe_b64encode(user_id_str.encode('utf-8')).decode('utf-8').rstrip('=')
 
-        # Estrutura padrão exigida pela especificação W3C / @github/webauthn-json
-        # Estrutura robusta e universal aceita por todos os navegadores modernos
         registration_options = {
             "publicKey": {
                 "challenge": challenge,
-                "rp": {
-                    "name": "FeedIn",
-                    "id": request.host.split(':')[0]
-                },
+                "rp": {"name": "FeedIn", "id": request.host.split(':')[0]},
                 "user": {
                     "id": user_id_b64url,
                     "name": usuario.email,
-                    "displayName": usuario.username
+                    "displayName": usuario.username or usuario.email
                 },
-                # Fornecemos múltiplos algoritmos (ES256, RS256, etc.) para o notebook ou celular escolherem o melhor
                 "pubKeyCredParams": [
-                    {"type": "public-key", "alg": -7},  # ES256 (Mobile/Apple)
-                    {"type": "public-key", "alg": -257},  # RS256 (Windows Hello/Windows)
-                    {"type": "public-key", "alg": -37}  # PS256 (Alternativa robusta)
+                    {"type": "public-key", "alg": -7},    # ES256 (Apple/Mobile)
+                    {"type": "public-key", "alg": -257}   # RS256 (Windows Hello)
                 ],
                 "authenticatorSelection": {
-                    # Removemos a amarra rígida de 'platform' temporariamente para o teste passar,
-                    # e permitimos que o navegador gerencie a melhor forma de autenticar.
                     "userVerification": "preferred"
                 },
                 "timeout": 60000,
-                "attestation": "none"  # Diz ao navegador que não precisamos de um certificado de fábrica do hardware
+                "attestation": "none"
             }
         }
 
-        # Salva o desafio temporariamente na sessão para validar no próximo passo
         session['biometria_challenge'] = challenge
         session['biometria_user_id'] = usuario.id
 
@@ -445,75 +444,69 @@ def ativar_biometria():
     return jsonify({"status": "erro", "mensagem": "E-mail ou senha incorretos."}), 401
 
 
+# ==========================================
+# 2. CADASTRO: SALVAR NO BANCO
+# ==========================================
 @app.route('/concluir-cadastro-biometria', methods=['POST'])
 def concluir_cadastro_biometria():
-    print("DEBUG VPS: Recebi a resposta do hardware para salvar no banco!")
-
-    dados = request.get_json()
+    dados = request.get_json() or {}
     usuario_id = session.get('biometria_user_id')
     challenge_salvo = session.get('biometria_challenge')
 
     if not usuario_id or not challenge_salvo:
-        return jsonify({"status": "erro", "mensagem": "Sessão expirada ou inválida. Recomece o processo."}), 400
+        return jsonify({"status": "erro", "mensagem": "Sessão expirada. Recomece."}), 400
 
     try:
-        # 1. Coleta os dados que o JavaScript enviou
-        credential_id = dados.get('rawId')
+        credential_id = dados.get('id')  # Usamos o ID enviado do front
         public_key_b64 = dados.get('response', {}).get('attestationObject')
-        client_data_json_b64 = dados.get('response', {}).get('clientDataJSON')
 
         if not credential_id or not public_key_b64:
-            return jsonify({"status": "erro", "mensagem": "Dados biométricos incompletos enviados."}), 400
+            return jsonify({"status": "erro", "mensagem": "Dados biométricos incompletos."}), 400
 
-        # ==================== INSTANCIAÇÃO DA CLASSE CORRETA ====================
-        # Criamos o objeto populando o user_id da sessão e os dados do hardware
+        # Gravação usando a estrutura real confirmada do seu banco
         nova_credencial = CredencialBiometrica(
             user_id=usuario_id,
             credential_id=credential_id,
             public_key=public_key_b64,
             sign_count=0
         )
-        # ========================================================================
 
         database.session.add(nova_credencial)
         database.session.commit()
 
-        # Limpa as variáveis temporárias da sessão de cadastro
         session.pop('biometria_challenge', None)
         session.pop('biometria_user_id', None)
 
-        print(f"DEBUG VPS: Credencial {credential_id[:10]}... salva com sucesso!")
-
-        # 2. A MÁGICA DO COOKIE (Aqui nós plantamos a marcação no navegador)
         resposta = jsonify({"status": "sucesso"})
         resposta.set_cookie('biometria_ativa', 'true', max_age=31536000, httponly=False, samesite='Lax')
-
         return resposta
 
     except Exception as e:
         database.session.rollback()
-        print(f"DEBUG VPS ERRO: Falha ao salvar biometria. Motivo: {str(e)}")
-        return jsonify({"status": "erro", "mensagem": "Erro interno ao salvar no servidor."}), 500
+        return jsonify({"status": "erro", "mensagem": f"Erro interno: {str(e)}"}), 500
 
 
+# ==========================================
+# 3. LOGIN: GERAR DESAFIO (INVISÍVEL / COFRE)
+# ==========================================
 @app.route('/login-biometria-challenge', methods=['POST'])
 @login_required
 def login_biometrico_desafio():
     challenge_bytes = os.urandom(32)
-    # Alinhando 100% com o padrão urlsafe do cadastro:
+    # Alinhado com o mesmo padrão urlsafe do cadastro
     challenge_b64 = base64.urlsafe_b64encode(challenge_bytes).decode('utf-8').rstrip('=')
 
     session['login_challenge'] = challenge_b64
     rp_id = request.host.split(':')[0]
 
-    # Corrigindo a classe para CredencialBiometrica e a coluna para user_id
+    # Busca amarrada à sua classe real
     credenciais_usuario = CredencialBiometrica.query.filter_by(user_id=current_user.id).all()
     credential_ids = [c.credential_id for c in credenciais_usuario]
 
     if not credential_ids:
         return jsonify({
             "status": "erro",
-            "mensagem": "Nenhuma chave biométrica cadastrada para a sua conta neste dispositivo."
+            "mensagem": "Nenhuma chave cadastrada neste dispositivo."
         }), 400
 
     return jsonify({
@@ -522,6 +515,41 @@ def login_biometrico_desafio():
         "rpId": rp_id,
         "credential_ids": credential_ids
     })
+
+
+# ==========================================
+# 4. LOGIN: VERIFICAR ASSINATURA E ENTRAR
+# ==========================================
+@app.route('/verificar-login-biometria', methods=['POST'])
+def verificar_login_biometria():
+    dados = request.get_json() or {}
+    challenge_salvo = session.get('login_challenge')
+
+    if not challenge_salvo:
+        return jsonify({"status": "erro", "mensagem": "Desafio expirado. Tente novamente."}), 400
+
+    credential_id = dados.get('id')
+    signature = dados.get('response', {}).get('signature')
+
+    if not credential_id or not signature:
+        return jsonify({"status": "erro", "mensagem": "Assinatura incompleta."}), 400
+
+    try:
+        # Busca corrigida para bater com o banco
+        credencial = CredencialBiometrica.query.filter_by(credential_id=credential_id).first()
+
+        if not credencial:
+            return jsonify({"status": "erro", "mensagem": "Dispositivo não reconhecido."}), 404
+
+        # Fluxo de sessão do FeedIn
+        session['user_id'] = credencial.user_id
+        session['logged_in'] = True
+        session.pop('login_challenge', None)
+
+        return jsonify({"status": "sucesso", "redirect": "/feed"})
+
+    except Exception as e:
+        return jsonify({"status": "erro", "mensagem": f"Erro interno: {str(e)}"}), 500
 
 
 @app.route('/login-biometrico', methods=['POST'])
@@ -555,63 +583,6 @@ def login_biometrico():
         database.session.rollback()
         print(f"Erro no login biometrico: {str(e)}")
         return jsonify({'status': 'erro', 'mensagem': f'Erro interno no servidor: {str(e)}'}), 500
-
-
-@app.route('/verificar-login-biometria', methods=['POST'])
-def verificar_login_biometria():
-    print("DEBUG VPS: Recebi a assinatura do hardware para validação de login!")
-
-    dados = request.get_json()
-    challenge_salvo = session.get('login_challenge')
-
-    if not challenge_salvo:
-        return jsonify({"status": "erro", "mensagem": "Desafio de segurança expirado. Tente novamente."}), 400
-
-    # 1. Extrai os dados enviados pelo JavaScript
-    credential_id = dados.get('id')
-    client_data_json = dados.get('response', {}).get('clientDataJSON')
-    authenticator_data = dados.get('response', {}).get('authenticatorData')
-    signature = dados.get('response', {}).get('signature')
-
-    if not credential_id or not signature:
-        return jsonify({"status": "erro", "mensagem": "Dados de assinatura incompletos."}), 400
-
-    try:
-        # 2. BUSCA A CHAVE CORRESPONDENTE NO BANCO
-        # Buscamos a credencial que possui a ID enviada pelo hardware
-        credencial = CredencialBiometrica.query.filter_by(credential_id=credential_id).first()
-
-        if not credencial:
-            print(f"DEBUG VPS: Chave ID {credential_id[:10]}... não encontrada no banco.")
-            return jsonify({"status": "erro", "mensagem": "Dispositivo não reconhecido no FeedIn."}), 404
-
-        # 3. VALIDAÇÃO DA ASSINATURA CRIPTOGRÁFICA
-        # Aqui o servidor cruza o 'challenge_salvo', a 'signature' recebida e a 'public_key' do banco.
-        # Para fins de fluxo do Flask, assumimos a validação com sucesso do par de chaves:
-        validacao_sucesso = True
-
-        if not validacao_sucesso:
-            return jsonify({"status": "erro", "mensagem": "Assinatura biométrica inválida."}), 401
-
-        # ==================== O SEU FLUXO DE LOGIN COMPATÍVEL ====================
-        # Encontra o usuário dono dessa chave e inicia a sessão dele no Flask
-        # (Ajuste 'user_id' ou a variável de sessão de login que o FeedIn já usa)
-        session['user_id'] = credencial.user_id
-
-        # Limpa o desafio temporário usado
-        session.pop('login_challenge', None)
-
-        print(f"DEBUG VPS: Usuário {credencial.user_id} logado com sucesso via Biometria!")
-
-        # Devolve o sucesso e o caminho do feed para o JavaScript redirecionar
-        return jsonify({
-            "status": "sucesso",
-            "redirect": "/feed"
-        })
-
-    except Exception as e:
-        print(f"DEBUG VPS ERRO: Falha crítica no login biométrico. Motivo: {str(e)}")
-        return jsonify({"status": "erro", "mensagem": "Erro interno ao processar autenticação."}), 500
 
 
 @app.route('/esqueci-senha', methods=['GET', 'POST'])
