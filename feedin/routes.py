@@ -4079,7 +4079,7 @@ def ver_perfil(usuario_id):
     locais_alvo_ids = [m.local_id for m in memorias_alvo]
     locais_comum_ids = set(meus_locais_ids) & set(locais_alvo_ids)
 
-    # 5. Signo (Usando sua função do utils.py)
+    # 5. Signo (Ajustado para não engolir o escopo da rota)
     s_nome, s_icone = (None, None)
     if user_alvo.perfil.data_nascimento:
         res = obter_signo(user_alvo.perfil.data_nascimento)
@@ -4088,27 +4088,20 @@ def ver_perfil(usuario_id):
     # =========================================================================
     # 6. MOTOR DO MURAL DE POSTAGENS (TRAVA DE PRIVACIDADE COMPLETA)
     # =========================================================================
-    # Guardamos o total bruto para estatísticas do perfil
     total_mural_bruto = Postagem.query.filter_by(id_usuario=usuario_id, ativo=True).count()
-
-    # Checa de forma explícita se a amizade/conexão está ativa
     tem_conexao_confirmada = (status_conexao == 'aceito')
 
     if e_o_proprio:
-        # Dono do perfil tem passe livre total sobre suas publicações
         postagens_permitidas = Postagem.query.options(joinedload(Postagem.autor)) \
             .filter_by(id_usuario=usuario_id, ativo=True) \
             .order_by(Postagem.data_criacao.desc()).all()
 
     elif not tem_conexao_confirmada:
-        # TRAVA CIRÚRGICA: Se NÃO são amigos, aplica a restrição pesada de visualização institucional.
-        # Carrega APENAS as duas primeiras fotos sem cruzar tags ou regras de locais.
         postagens_permitidas = Postagem.query.options(joinedload(Postagem.autor)) \
             .filter_by(id_usuario=usuario_id, ativo=True) \
             .order_by(Postagem.data_criacao.desc()).limit(2).all()
 
     else:
-        # SE SÃO AMIGOS ACEITOS: Roda o seu motor inteligente de afinidade por locais e subgrupos
         post_sem_tag = and_(
             ~Postagem.tags_afinidade.any(),
             or_(
@@ -4129,13 +4122,54 @@ def ver_perfil(usuario_id):
         ).order_by(Postagem.data_criacao.desc()).all()
     # =========================================================================
 
-    # 7. Postagens onde o USER_ALVO FOI MARCADO (Bloqueado ou restrito se não forem amigos)
+    # =========================================================================
+    # LÓGICA DE FILTRAGEM VIA TABELAS FÍSICAS (O PENSAMENTO DO CARLOS)
+    # =========================================================================
+    # A) Coletamos o ID real de todas as postagens visíveis e localizamos os bloqueados
+    ids_posts_visiveis = [p.id for p in postagens_permitidas]
+
+    posts_barrados_ids = [resultado[0] for resultado in database.session.query(Postagem.id).filter(
+        Postagem.id_usuario == usuario_id,
+        Postagem.ativo == True,
+        ~Postagem.id.in_(ids_posts_visiveis) if ids_posts_visiveis else True
+    ).all()]
+
+    # B) Buscamos na tabela intermediária bruta o que o VISITANTE já segue
+    tags_do_visitante = [resultado[0] for resultado in database.session.query(
+        usuarios_interesses.c.taxonomia_id
+    ).filter(
+        usuarios_interesses.c.usuario_id == current_user.id
+    ).all()]
+
+    # C) Cruzamos com a tabela física 'postagem_tags' capturando o que está oculto e ele não segue
+    if posts_barrados_ids:
+        tags_nao_seguidas_ids = [resultado[0] for resultado in database.session.query(
+            postagem_tags.c.taxonomia_id
+        ).filter(
+            postagem_tags.c.postagem_id.in_(posts_barrados_ids),
+            ~postagem_tags.c.taxonomia_id.in_(tags_do_visitante) if tags_do_visitante else True
+        ).distinct().all()]
+    else:
+        tags_nao_seguidas_ids = []
+
+    # D) Resolvemos em objetos reais da Taxonomia ordenados de A a Z para o Modal
+    if tags_nao_seguidas_ids:
+        tags_nao_seguidas = (
+            Taxonomia.query
+            .filter(Taxonomia.id.in_(tags_nao_seguidas_ids))
+            .order_by(Taxonomia.nome.asc())
+            .all()
+        )
+    else:
+        tags_nao_seguidas = []
+    # =========================================================================
+
+    # 7. Postagens onde o USER_ALVO FOI MARCADO
     if e_o_proprio or tem_conexao_confirmada:
         fotos_com_alvo = Postagem.query.join(Postagem.pessoas_marcadas) \
             .filter(Usuario.id == usuario_id, Postagem.ativo == True) \
             .order_by(Postagem.data_criacao.desc()).all()
     else:
-        # Se não há conexão confirmada, oculta o bloco de fotos onde terceiros marcaram ele
         fotos_com_alvo = []
 
     form_convite = FormConexao()
@@ -4152,7 +4186,8 @@ def ver_perfil(usuario_id):
                            conexao=conexao_atual,
                            conexoes_confirmadas=conexoes_confirmadas,
                            tags_comum_ids=[t.id for t in tags_em_comum],
-                           meus_interesses_ids=set(minhas_tags_ids),
+                           tags_nao_seguidas=tags_nao_seguidas,
+                           meus_interesses_ids=set(tags_do_visitante),  # Atualizado para usar a lista limpa da tabela
                            locais_comum_ids=locais_comum_ids,
                            locais_seguidos=locais_seguidos,
                            signo_nome=s_nome,
@@ -5134,3 +5169,7 @@ def recusar_marcacao(id_marcacao):
         flash("Erro ao processar a recusa.", "danger")
 
     return redirect(request.referrer or url_for('dashboard'))
+
+
+from flask import jsonify  # Certifique-se de que o jsonify está importado no topo do arquivo
+

@@ -91,6 +91,29 @@
         content: "\f62a";
     }
 
+    .border-dashed {
+        border-style: dashed !important;
+        border-width: 1.5px !important;
+        background-color: #f8f9fa !important;
+        border-color: #dee2e6 !important;
+    }
+    .border-dashed:hover {
+        background-color: #e9ecef !important;
+        border-color: #0d6efd !important;
+        color: #0d6efd !important;
+    }
+
+    /* Hover dedicado para o Badge de Posts Direcionados Clicável */
+    .badge-direcionado-clicavel {
+        cursor: pointer;
+        transition: all 0.2s ease-in-out;
+    }
+    .badge-direcionado-clicavel:hover {
+        background-color: #fff3cd !important;
+        border-color: #ffecb5 !important;
+        transform: translateY(-1px);
+    }
+
     @media (max-width: 768px) {
         .fab-container { bottom: 20px; right: 20px; }
         .fab-postagem { width: 55px; height: 55px; font-size: 24px; }
@@ -122,7 +145,7 @@
         {% endif %}
     </div>
 
-    {# 3. CABEÇALHO DO USUÁRIO #}
+    {# 3. CABEÇALHO DO USUÁRIO (100% LIMPO E ORIGINAL) #}
     <div class="container text-center mb-5">
         <div class="info-user-overlay foto-perfil-container">
             <img src="{{ url_for('servir_foto_perfil', usuario_id=user_alvo.id) }}"
@@ -149,43 +172,8 @@
                 {% endif %}
             </p>
 
-            {# ÁREA DE CONEXÃO - PERFIL PÚBLICO #}
-            {% if not e_o_proprio %}
-                <div class="mt-3 mb-4">
-                    {% if not conexao %}
-                        <form action="{{ url_for('conectar_pioneiro', id_destinatario=user_alvo.id) }}" method="POST">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <button type="submit" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm transition-hover">
-                                <i class="bi bi-person-plus-fill me-2"></i>Brindar Conexão
-                            </button>
-                        </form>
-                    {% elif conexao.status == 'pendente' %}
-                        {% if conexao.id_remetente == current_user.id %}
-                            <button class="btn btn-warning rounded-pill px-4 fw-bold shadow-sm disabled">
-                                <i class="bi bi-hourglass-split me-2"></i>Aguardando Confirmação
-                            </button>
-                        {% else %}
-                            <form action="{{ url_for('aceitar_conexao', conexao_id=conexao.id) }}" method="POST">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <button type="submit" class="btn btn-success rounded-pill px-4 fw-bold shadow-sm">
-                                    Aceitar Brinde
-                                </button>
-                            </form>
-                        {% endif %}
-                    {% elif conexao.status == 'aceito' %}
-                        <button type="button"
-                                class="btn btn-outline-primary btn-conectado rounded-pill px-4 fw-bold shadow-sm"
-                                data-bs-toggle="modal"
-                                data-bs-target="#modalDesconexao"
-                                data-nome="{{ user_alvo.perfil.nome_completo or user_alvo.username }}">
-                            <i class="bi bi-person-check-fill me-2"></i>Conectado
-                        </button>
-                    {% endif %}
-                </div>
-            {% endif %}
-
             {% if user_alvo.is_pioneiro %}
-                <div class="mb-3">
+                <div class="mb-3 mt-2">
                     <span class="badge-pioneiro-gold"><i class="bi bi-patch-check-fill me-1"></i> Usuário Pioneiro</span>
                 </div>
             {% endif %}
@@ -259,12 +247,15 @@
                         </small>
                     </div>
 
+                    {# BADGE TRADICIONAL MANTIDO - RESPONDENDO AGORA AO CLIQUE PERFEITAMENTE #}
                     {% if not e_o_proprio and postagens|length < total_postagens %}
-                        <span class="badge bg-light text-secondary border shadow-sm p-2"
+                        <span class="badge bg-light text-secondary border shadow-sm p-2 badge-direcionado-clicavel"
+                              data-bs-toggle="modal"
+                              data-bs-target="#modalTagsOcultas"
                               style="font-size: 0.75rem; max-width: 300px; white-space: normal; text-align: left;"
-                              title="Algumas publicações deste perfil estão direcionadas a subgrupos específicos de interesses que você ainda não segue.">
+                              title="Clique para ver os temas que liberam estas publicações.">
                             <i class="bi bi-info-circle-fill text-warning me-1"></i>
-                            Existem posts direcionados que você não segue.
+                            Existem posts direcionados que você não segue. <strong>Clique aqui.</strong>
                         </span>
                     {% endif %}
                 </div>
@@ -272,8 +263,7 @@
                 <div id="mural-content" class="row g-4">
                     {% for item in postagens %}
                         <div class="col-12 col-feed">
-                            {# Definimos ambos os nomes para garantir que o card universal funcione perfeitamente #}
-                            {% with atividade = item, activity = item, context_origem = 'perfil_publico' %}
+                            {% with activity = item, atividade = item, context_origem = 'perfil_publico' %}
                                 {% include "partials/cards/card_postagem_universal.html" %}
                             {% endwith %}
                         </div>
@@ -368,7 +358,7 @@
     </div>
     {% endif %}
 
-    {# --- MODAL DE ATIVAÇÃO DA BIOMETRIA (DENTRO DO COFRE) --- #}
+    {# --- MODAL DE ATIVAÇÃO DA BIOMETRIA --- #}
     <div class="modal fade" id="modalAtivarBiometria" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content rounded-4 border-0 shadow-lg">
@@ -397,6 +387,37 @@
                     <button type="button" onclick="iniciarCadastroBiometrico()" class="btn btn-info text-white rounded-pill px-4 fw-bold small shadow-sm">
                         <i class="bi bi-person-badge-fill me-1"></i>Ativar Agora
                     </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# MODAL DE EXPLORAÇÃO ALIMENTADO DIRETAMENTE PELO JINJA2 #}
+    <div class="modal fade" id="modalTagsOcultas" tabindex="-1" aria-labelledby="modalTagsOcultasLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-sm">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header border-0 pb-2">
+                    <h6 class="modal-title fw-bold text-secondary" id="modalTagsOcultasLabel">
+                        <i class="bi bi-compass-fill text-primary me-1"></i> Desvendar Temas
+                    </h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body pt-0">
+                    <p class="text-muted small mb-3">Estas são as memórias que você ainda não acompanha. Clique para passar a seguir o tema:</p>
+
+                    <div id="lista-tags-ocultas" class="d-flex flex-column gap-2" style="max-height: 300px; overflow-y: auto; padding-right: 5px;">
+                        {% for tag in tags_nao_seguidas %}
+                            <button type="button" onclick="window.ativarEPassarASeguirTag({{ tag.id }}, this)"
+                                    class="btn btn-outline-secondary btn-sm text-start w-100 px-3 py-2 d-flex justify-content-between align-items-center rounded-3 position-relative border-dashed"
+                                    style="font-size: 0.85rem; transition: all 0.2s;">
+                                <span>
+                                    <i class="bi bi-hash text-muted"></i><strong>{{ tag.nome }}</strong>
+                                </span>
+                            </button>
+                        {% else %}
+                            <p class="text-muted text-center small my-2">Nenhum tema oculto restante!</p>
+                        {% endfor %}
+                    </div>
                 </div>
             </div>
         </div>
@@ -483,6 +504,39 @@
         }
     };
 
+    /* AÇÃO CIRÚRGICA DE ENVIAR INTERESSE DIRETO PRO SEU BACKEND */
+    window.ativarEPassarASeguirTag = function(tagId, elementoBotao) {
+        if ($(elementoBotao).data('processando')) return;
+        $(elementoBotao).data('processando', true).prop('disabled', true).addClass('opacity-50');
+
+        const csrfToken = "{{ csrf_token() }}";
+
+        $.ajax({
+            url: `/api/seguir_tag_direto/${tagId}`,
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+            success: function(response) {
+                if (response.sucesso || response.status === "success") {
+                    $(elementoBotao).removeClass('btn-outline-secondary border-dashed')
+                                    .addClass('btn-success text-white')
+                                    .html('<span><i class="bi bi-check-lg me-1"></i> Tema Adicionado!</span>');
+
+                    setTimeout(function() {
+                        location.reload();
+                    }, 600);
+                } else {
+                    alert(response.mensagem || "Não foi possível seguir este tema.");
+                    $(elementoBotao).data('processando', false).prop('disabled', false).removeClass('opacity-50');
+                }
+            },
+            error: function(xhr) {
+                console.error("Erro no Ajax de seguir tag:", xhr.responseText);
+                alert("Erro de comunicação com o servidor ao salvar interesse.");
+                $(elementoBotao).data('processando', false).prop('disabled', false).removeClass('opacity-50');
+            }
+        });
+    };
+
 function base64ToBufferCadastro(base64String) {
     const binaryString = window.atob(base64String);
     const bytes = new Uint8Array(binaryString.length);
@@ -494,7 +548,6 @@ function base64ToBufferCadastro(base64String) {
 
 async function iniciarCadastroBiometrico() {
     try {
-        // 1. SOLICITA O DESAFIO DIRETAMENTE NA ROTA DE ATIVAÇÃO/CADASTRO
         const respostaDesafio = await fetch('/ativar-biometria', { method: 'POST' });
 
         if (!respostaDesafio.ok) {
@@ -510,7 +563,6 @@ async function iniciarCadastroBiometrico() {
             return;
         }
 
-        // 2. PREPARA OS REQUISITOS COM OS DADOS DINÂMICOS VINDOS DO PYTHON
         const opcionesCadastro = {
             publicKey: {
                 challenge: base64ToBufferCadastro(dadosDesafio.options.publicKey.challenge),
@@ -527,15 +579,12 @@ async function iniciarCadastroBiometrico() {
             }
         };
 
-        // Fecha o modal do Bootstrap para liberar a tela pro sensor do aparelho
         const modalElement = document.getElementById('modalAtivarBiometria');
         const modalInstance = bootstrap.Modal.getInstance(modalElement);
         if (modalInstance) modalInstance.hide();
 
-        // 3. ACIONA O SENSOR FÍSICO DO DISPOSITIVO (Face ID / Digital)
         const novaChaveCriada = await navigator.credentials.create(opcionesCadastro);
 
-        // 4. EMBALA A RESPOSTA CRIPTOGRAFADA DO SENSOR (Usa a mesma lógica robusta do seu outro script)
         const dadosParaSalvar = {
             id: novaChaveCriada.id,
             rawId: novaChaveCriada.id,
@@ -546,7 +595,6 @@ async function iniciarCadastroBiometrico() {
             }
         };
 
-        // 5. ENVIA PARA A VPS GRAVAR DEFINITIVAMENTE NO BANCO
         const respostaSalvamento = await fetch('/concluir-cadastro-biometria', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -557,7 +605,7 @@ async function iniciarCadastroBiometrico() {
 
         if (resultadoFinal.status === 'sucesso') {
             alert("Face ID / Biometria vinculada com sucesso no FeedIn!");
-            window.location.reload(); // Recarrega a página para atualizar o status do cofre
+            window.location.reload();
         } else {
             alert("Erro ao salvar no servidor: " + resultadoFinal.mensagem);
         }
