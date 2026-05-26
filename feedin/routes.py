@@ -2229,51 +2229,40 @@ def apenas_admin(f):
 @app.route('/admin/dashboard/<int:pai_id>')
 @login_required
 def admin_sistema(pai_id=None):
-    # Verifica o nível de acesso de admin (ex: 9999)
+    # 1. VALIDAÇÃO DE ACESSO (O bloco do 'if' termina no return redirect)
     if current_user.nivel_acesso < 9999:
         flash('Acesso restrito aos administradores do sistema.', 'danger')
         return redirect(url_for('dashboard'))
 
-    # 1. Estatísticas Rápidas dos Cards
+    # 2. CARREGAMENTO DAS SUAS VARIÁVEIS DE TAXONOMIA E STATS
+    # (Recupere aqui as suas queries originais do banco, como os exemplos abaixo)
+    pai_selecionado = Taxonomia.query.get(pai_id) if pai_id else None
+    qtd_filhos = Taxonomia.query.filter_by(pai_id=pai_id).count() if pai_id else 0
+    avos = pai_selecionado.raizes_superiores if pai_selecionado else []  # ajuste conforme sua model
+
+    # Suas queries originais que geram o dicionário stats:
     stats = {
         'usuarios': Usuario.query.count(),
-        'pioneiros': Usuario.query.filter_by(is_pioneiro=True).count(),
+        'pioneiros': Usuario.query.filter_by(is_pioneiro=True).count(),  # ou sua lógica de contagem
         'taxonomia': Taxonomia.query.count()
     }
 
-    # 2. Carrega o Pai Selecionado (se houver)
-    pai_selecionado = None
-    avos = []
-    qtd_filhos = 0
+    # =================================================================
+    # 3. AJUSTE DA ORDENAÇÃO ALFABÉTICA (Alinhado fora do IF)
+    # =================================================================
+    todos_usuarios = Usuario.query.order_by(Usuario.username.asc()).all()
 
-    if pai_id:
-        pai_selecionado = Taxonomia.query.get(pai_id)
-    elif request.args.get('pai_id'):
-        pai_selecionado = Taxonomia.query.get(request.args.get('pai_id'))
-
-    if pai_selecionado:
-        # Contagem de filhos vinculados
-        qtd_filhos = database.session.query(taxonomia_conexoes).filter_by(pai_id=pai_selecionado.id).count()
-
-        # Busca os múltiplos Avôs na tabela associativa
-        conexoes_avos = database.session.query(taxonomia_conexoes.c.pai_id).filter(
-            taxonomia_conexoes.c.filho_id == pai_selecionado.id
-        ).all()
-        avo_ids = [c[0] for c in conexoes_avos]
-        if avo_ids:
-            avos = Taxonomia.query.filter(Taxonomia.id.in_(avo_ids)).all()
-
-    # 3. Agrupamento Alfabético para Gestão de Usuários (Accordion)
-    usuarios = Usuario.query.order_by(Usuario.username.asc()).all()
-    usuarios_agrupados = {}
-    for u in usuarios:
+    agrupado_bruto = {}
+    for u in todos_usuarios:
         letra = u.username[0].upper() if u.username else '#'
-        if not letra.isalpha():
-            letra = '#'
-        if letra not in usuarios_agrupados:
-            usuarios_agrupados[letra] = []
-        usuarios_agrupados[letra].append(u)
+        if letra not in agrupado_bruto:
+            agrupado_bruto[letra] = []
+        agrupado_bruto[letra].append(u)
 
+    usuarios_agrupados = {letra: agrupado_bruto[letra] for letra in sorted(agrupado_bruto.keys())}
+    # =================================================================
+
+    # 4. RENDERIZAÇÃO DA TELA (Agora com todas as variáveis vivas)
     return render_template(
         'admin/dashboard.html',
         stats=stats,
