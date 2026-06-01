@@ -280,8 +280,9 @@ def salvar_imagem_capa(foto, usuario_id):
 def salvar_imagem_anuncio(foto, local_id):
     """
     Processa o flyer/arte de publicidade do estabelecimento local.
-    Garante orientação EXIF, converte para RGB, faz o Crop Central 1:1,
-    redimensiona para 1080x1080 e salva em WEBP com qualidade 85.
+    Garante orientação EXIF, converte para RGB, preserva as dimensões e proporções
+    originais da arte (sem crop fixo), aplicando apenas um teto máximo de segurança
+    para otimização de largura/altura, e salva em WEBP com qualidade 85.
     """
     if not foto or not hasattr(foto, 'filename') or foto.filename == '':
         return None
@@ -298,26 +299,30 @@ def salvar_imagem_anuncio(foto, local_id):
     try:
         img = Image.open(foto)
 
-        # 1. Corrigir orientação EXIF (evita que a arte suba deitada se tirada do celular)
+        # 1. Corrigir orientação EXIF (evita que a arte suba deitada se enviada do celular)
         img = ImageOps.exif_transpose(img)
 
         # 2. Converter para RGB (Garante compatibilidade e remove transparências nocivas em anúncios)
         if img.mode in ("RGBA", "P"):
             img = img.convert("RGB")
 
-        # 3. Lógica de Crop Central 1:1 (Enquadra perfeitamente se o comerciante mandar uma foto fora do padrão)
+        # 3. REDIMENSIONAMENTO PROPORCIONAL DE SEGURANÇA
+        # Definimos um limite máximo (ex: 1200px) para o maior lado, evitando arquivos gigantes na VPS.
+        # A proporção original (aspect ratio) é 100% preservada.
+        LIMITE_MAXIMO = 1200
         largura, altura = img.size
-        if largura > altura:
-            margem = (largura - altura) / 2
-            img = img.crop((margem, 0, largura - margem, altura))
-        elif altura > largura:
-            margem = (altura - largura) / 2
-            img = img.crop((0, margem, largura, altura - margem))
 
-        # 4. Redimensionar para 1080x1080 (O "sweet spot" de qualidade/peso para anúncios no Feed)
-        img = img.resize((1080, 1080), Image.Resampling.LANCZOS)
+        if largura > LIMITE_MAXIMO or altura > LIMITE_MAXIMO:
+            if largura > altura:
+                nova_largura = LIMITE_MAXIMO
+                nova_altura = int((altura * LIMITE_MAXIMO) / largura)
+            else:
+                nova_altura = LIMITE_MAXIMO
+                nova_largura = int((largura * LIMITE_MAXIMO) / altura)
 
-        # 5. Salvar em WEBP (Otimização máxima de carregamento para a VPS)
+            img = img.resize((nova_largura, nova_altura), Image.Resampling.LANCZOS)
+
+        # 4. Salvar em WEBP (Otimização máxima de carregamento para o FeedIn)
         img.save(caminho_completo, "WEBP", quality=85)
 
         return nome_arquivo
