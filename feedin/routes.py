@@ -4191,39 +4191,45 @@ def ver_perfil(usuario_id):
             fotos_com_alvo = []
 
         # =========================================================================
-        # MOTOR DE PUBLICIDADE CONTEXTUAL COM RESPIRO ORGÂNICO (PERFIL PÚBLICO)
+        # 🎲 MOTOR DE PUBLICIDADE CONTEXTUAL CALIBRADO (25% CHANCE + 2 RESPIROS)
         # =========================================================================
         import random
-        anuncio_exibido_no_anterior = False
+        cards_de_respiro_restantes = 0
 
         for post in postagens_permitidas:
-            # Garante que todo post comece sem anúncio residual
+            # Limpa qualquer resíduo anterior do objeto
             post.anuncio = None
 
-            if anuncio_exibido_no_anterior:
-                anuncio_exibido_no_anterior = False
-            else:
-                # 35% de chance de exibição randômica
-                if random.random() < 0.35:
-                    # Passamos local_contexto_id=None para desarmar a trava de concorrência comercial
-                    anuncio_gerado = obter_publicidade_contextual(post, local_contexto_id=None)
+            # Se houver respiros pendentes, força o card a ser 100% orgânico
+            if cards_de_respiro_restantes > 0:
+                cards_de_respiro_restantes -= 1
+                continue
 
-                    if anuncio_gerado:
-                        post.anuncio = anuncio_gerado
-                        anuncio_exibido_no_anterior = True
+            # Se o respiro expirou, joga o dado calibrado em 25% de chance
+            if random.random() < 0.25:
+                anuncio_gerado = obter_publicidade_contextual(post, local_contexto_id=None)
+
+                # Mantém o sorteio dinâmico caso retorne uma lista de variações do patrocinador
+                if isinstance(anuncio_gerado, list) and len(anuncio_gerado) > 0:
+                    anuncio_gerado = random.choice(anuncio_gerado)
+
+                if anuncio_gerado:
+                    post.anuncio = anuncio_gerado
+                    # Ativa o isolamento tático: as próximas duas memórias serão limpas
+                    cards_de_respiro_restantes = 2
         # =========================================================================
 
         # 2. PREPARAÇÃO DO FORMULÁRIO (Mantido original)
         form_convite = FormConexao()
 
-    # 3. RETORNO DA ROTA (Adicionando a permissão do flyer)
+    # 3. RETORNO DA ROTA
     return render_template("perfil_publico.html",
                            user_alvo=user_alvo,
                            status_conexao=status_conexao,
                            sou_remetente=sou_remetente,
                            e_o_proprio=e_o_proprio,
                            postagens=postagens_permitidas,
-                           exibir_como_flyer=True,  # 🌟 Libera a exibição dos Flyers no card universal
+                           exibir_como_flyer=True,
                            total_postagens=total_mural_bruto,
                            fotos_com_voce=fotos_com_alvo,
                            memorias=memorias_alvo,
@@ -4241,12 +4247,15 @@ def ver_perfil(usuario_id):
 
 from sqlalchemy.orm import joinedload
 
+
 @app.route('/local/<int:local_id>')
 @login_required
 def perfil_local(local_id):
     database.session.rollback()
 
-    # OTIMIZAÇÃO: Traz o local e já carrega os relacionamentos para evitar fadiga na VPS
+    import random
+
+    # OTIMIZAÇÃO: Traw o local e já carrega os relacionamentos para evitar fadiga na VPS
     local = Local.query.get_or_404(local_id)
 
     # 1. GARANTIA DE VARIÁVEIS
@@ -4290,7 +4299,8 @@ def perfil_local(local_id):
     if current_user.is_authenticated and hasattr(current_user.perfil, 'tags_seguidas'):
         meus_interesses_ids = [t.id for t in current_user.perfil.tags_seguidas]
 
-    anuncio_exibido_no_anterior = False
+    # Inicializa o controlador de espaçamento para as memórias do local
+    cards_de_respiro_restantes = 0
 
     for p in postagens_totais_local:
         e_o_autor = (current_user.is_authenticated and p.id_usuario == current_user.id)
@@ -4300,30 +4310,30 @@ def perfil_local(local_id):
             tags_usuario_segue = set(t.id for t in current_user.interesses) if current_user.is_authenticated else set()
 
             liberado_por_vinculo = e_o_autor or usuario_segue
-
-            # CORREÇÃO AQUI: Se o post não tem tags, libera. Se tem, vê se a intersecção não é vazia (basta 1 em comum)
             liberado_por_tag = not tags_da_postagem or bool(tags_da_postagem & tags_usuario_segue)
 
             if liberado_por_vinculo or liberado_por_tag:
                 posts_exibidos_contador += 1
 
                 # =========================================================================
-                # 🎲 CADÊNCIA FLUIDA E IMPREVISÍVEL DE PUBLICIDADE
+                # 🎲 CADÊNCIA EQUILIBRADA DE PUBLICIDADE CONCORRENTE (25% CHANCE + 2 RESPIROS)
                 # =========================================================================
                 anuncio_gerado = None
 
-                # 1. Se o post anterior teve anúncio, este obrigatoriamente NÃO TERÁ (Garante o respiro)
-                if anuncio_exibido_no_anterior:
-                    anuncio_exibido_no_anterior = False
+                # Se a trava de respiro estiver ativa, pula a requisição do anúncio
+                if cards_de_respiro_restantes > 0:
+                    cards_de_respiro_restantes -= 1
                 else:
-                    # 2. Se o caminho estiver livre, jogamos um dado (35% de chance de exibir neste post)
-                    # Isso distribui os anúncios de forma totalmente aleatória na timeline
-                    if random.random() < 0.35:
+                    # Roda o dado calibrado em 25% de chance
+                    if random.random() < 0.25:
                         anuncio_gerado = obter_publicidade_contextual(p, local_contexto_id=local.id)
 
-                        # Se o motor de fato encontrou um anúncio ativo para a tag, ativamos a trava
+                        if isinstance(anuncio_gerado, list) and len(anuncio_gerado) > 0:
+                            anuncio_gerado = random.choice(anuncio_gerado)
+
                         if anuncio_gerado:
-                            anuncio_exibido_no_anterior = True
+                            # Ativa o respiro obrigatório para os próximos 2 cards liberados
+                            cards_de_respiro_restantes = 2
                 # =========================================================================
 
                 atividades_formatadas.append({
@@ -4343,22 +4353,24 @@ def perfil_local(local_id):
                     'pessoas_marcadas': p.pessoas_marcadas_confirmadas,
                     'id_usuario': p.id_usuario
                 })
+
     # Ordenação cronológica reversa estrita das postagens
     atividades = sorted(atividades_formatadas, key=lambda x: x['data_criacao'], reverse=True)
 
-    # 5. RENDERIZAÇÃO NO TEMPLATE DE ENGAJAMENTO SOCIAL (perfil_local.html)
+    # 5. RENDERIZAÇÃO NO TEMPLATE
     return render_template('locais/perfil_local.html',
                            local=local,
                            atividades=atividades,
                            posts_exibidos_contador=posts_exibidos_contador,
                            total_posts_reais=total_posts_reais,
-                           total_atividades=total_posts_reais,  # Alinha com a verificação de tags ocultas do HTML
+                           total_atividades=total_posts_reais,
                            sugestoes_nicho=tags_dos_amigos,
                            usuario_segue=usuario_segue,
                            context_origem='perfil_local',
                            exibir_como_flyer=True,
-                           meus_interesses_ids=meus_interesses_ids,  # Injetado para o funcionamento das tags no card
+                           meus_interesses_ids=meus_interesses_ids,
                            rating_data=local.get_rating_data())
+
 
 @app.route('/local_v2/<int:local_id>')
 @login_required
